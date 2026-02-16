@@ -4,9 +4,12 @@
 <meta charset="UTF-8">
 <title>TSG Support Dashboard PRO</title>
 
-<!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<!-- Firebase (cache-busted with ?v timestamp) -->
+<script>
+const fbVersion = Date.now(); // forces fresh load every time
+document.write('<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js?v='+fbVersion+'"><\/script>');
+document.write('<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js?v='+fbVersion+'"><\/script>');
+</script>
 
 <!-- Fonts & Icons -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
@@ -21,59 +24,26 @@
   --text:#fff;
 }
 body { margin:0; font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); }
-.sidebar {
-  width:220px; height:100vh; background:#020617; position:fixed; padding:20px; display:flex; flex-direction:column;
-}
+.sidebar { width:220px; height:100vh; background:#020617; position:fixed; padding:20px; display:flex; flex-direction:column; }
 .sidebar h2 { margin-bottom:20px; font-weight:600; }
-.sidebar button {
-  display:flex; align-items:center; gap:10px;
-  width:100%; margin:10px 0; padding:10px; background:var(--card);
-  border:none; color:white; cursor:pointer; border-radius:8px;
-  font-weight:600; transition: all 0.2s;
-}
+.sidebar button { display:flex; align-items:center; gap:10px; width:100%; margin:10px 0; padding:10px; background:var(--card); border:none; color:white; cursor:pointer; border-radius:8px; font-weight:600; transition: all 0.2s; }
 .sidebar button:hover { background:var(--hover); transform:translateX(5px); }
-
 .main { margin-left:240px; padding:20px; transition: all 0.3s; }
-
-.card {
-  background:var(--card); padding:15px; border-radius:12px;
-  margin-bottom:15px; transition: transform 0.2s, box-shadow 0.2s;
-}
+.card { background:var(--card); padding:15px; border-radius:12px; margin-bottom:15px; transition: transform 0.2s, box-shadow 0.2s; }
 .card:hover { transform: translateY(-3px); box-shadow:0 4px 20px rgba(0,0,0,0.4); }
-
 input, textarea { width:100%; padding:10px; margin:5px 0; border-radius:8px; border:none; }
-
-button.action {
-  background:var(--primary); border:none; padding:8px 12px;
-  color:white; border-radius:6px; cursor:pointer; font-weight:600;
-  transition: all 0.2s;
-}
+button.action { background:var(--primary); border:none; padding:8px 12px; color:white; border-radius:6px; cursor:pointer; font-weight:600; transition: all 0.2s; }
 button.action:hover { background:#2563eb; transform:translateY(-2px); }
-
 .status-open { color:#ef4444; font-weight:600; }
 .status-progress { color:#f59e0b; font-weight:600; }
 .status-resolved { color:#22c55e; font-weight:600; }
-
 .badge { background:#22c55e; padding:2px 6px; border-radius:6px; font-size:12px; margin-left:5px; }
-
-.comment {
-  margin-left:15px; background:#334155;
-  padding:5px; border-radius:8px; margin-top:5px;
-  animation: fadeIn 0.5s ease;
-}
-
+.comment { margin-left:15px; background:#334155; padding:5px; border-radius:8px; margin-top:5px; animation: fadeIn 0.5s ease; }
 @keyframes fadeIn { from { opacity:0; transform:translateY(5px);} to { opacity:1; transform:translateY(0);} }
-
-.notification {
-  position:fixed; top:20px; right:20px;
-  background:var(--primary); padding:10px 15px; border-radius:8px;
-  color:white; box-shadow:0 4px 15px rgba(0,0,0,0.5);
-  animation: slideIn 0.5s forwards; opacity:0;
-}
+.notification { position:fixed; top:20px; right:20px; background:var(--primary); padding:10px 15px; border-radius:8px; color:white; box-shadow:0 4px 15px rgba(0,0,0,0.5); animation: slideIn 0.5s forwards; opacity:0; }
 @keyframes slideIn { to { opacity:1; transform:translateX(0);} from { opacity:0; transform:translateX(50px);} }
 </style>
 </head>
-
 <body>
 
 <div class="sidebar">
@@ -85,7 +55,6 @@ button.action:hover { background:#2563eb; transform:translateY(-2px); }
 
 <div class="main">
 
-<!-- HOME -->
 <div id="home">
   <h1>Dashboard</h1>
   <div class="card">
@@ -96,13 +65,11 @@ button.action:hover { background:#2563eb; transform:translateY(-2px); }
   </div>
 </div>
 
-<!-- REPORTS -->
 <div id="reports" style="display:none;">
   <h1>Reports</h1>
   <div id="reportList"></div>
 </div>
 
-<!-- ADMIN -->
 <div id="admin" style="display:none;">
   <h1>Admin Panel</h1>
   <input id="adminCode" placeholder="Enter admin code">
@@ -155,10 +122,8 @@ function submitReport(){
   if(!text) return alert("Write something!");
   const support = supportUsers.includes(user);
 
-  db.collection("reports").add({
-    user, text, status:"open", support, comments:[]
-  }).then(()=>notify("Report submitted!"));
-
+  db.collection("reports").add({ user, text, status:"open", support, comments:[] })
+    .then(()=>notify("Report submitted!"));
   document.getElementById("reportText").value="";
 }
 
@@ -172,34 +137,23 @@ db.collection("reports").onSnapshot(snapshot=>{
 function renderReports(data){
   const list = document.getElementById("reportList");
   list.innerHTML="";
-  if(!data) return;
-
   Object.entries(data).forEach(([id,r])=>{
     let statusClass="status-open";
     if(r.status==="in progress") statusClass="status-progress";
     if(r.status==="resolved") statusClass="status-resolved";
-
     const div = document.createElement("div");
     div.className="card";
-
     div.innerHTML=`
       <b>${r.user}</b> ${r.support?'<span class="badge">Support</span>':''}
       <br><span class="${statusClass}">${r.status}</span>
       <p>${r.text}</p>
-
       <button class="action" onclick="comment('${id}')">Comment <i class="fas fa-comment"></i></button>
-
-      ${isAdmin ? `
-        <button onclick="setStatus('${id}','in progress')">In Progress</button>
-        <button onclick="setStatus('${id}','resolved')">Resolved</button>
-        <button onclick="deleteReport('${id}')">Delete</button>
-      ` : ''}
-
+      ${isAdmin ? `<button onclick="setStatus('${id}','in progress')">In Progress</button>
+                    <button onclick="setStatus('${id}','resolved')">Resolved</button>
+                    <button onclick="deleteReport('${id}')">Delete</button>` : ''}
       <div id="c${id}"></div>
     `;
-
     list.appendChild(div);
-
     const cDiv = document.getElementById("c"+id);
     (r.comments||[]).forEach(c=>{
       const el = document.createElement("div");
@@ -216,7 +170,6 @@ function comment(id){
   const text = prompt("Comment:");
   if(!text) return;
   const support = supportUsers.includes(user);
-
   const docRef = db.collection("reports").doc(id);
   docRef.get().then(doc=>{
     let comments = doc.data().comments||[];
@@ -241,12 +194,10 @@ function setStatus(id,status){
   db.collection("reports").doc(id).update({status});
   notify("Status updated!");
 }
-
 function deleteReport(id){
   db.collection("reports").doc(id).delete();
   notify("Report deleted!");
 }
 </script>
-
 </body>
 </html>
