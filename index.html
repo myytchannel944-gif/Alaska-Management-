@@ -11,89 +11,57 @@
 *{margin:0;padding:0;box-sizing:border-box;font-family:'Inter',sans-serif;}
 body{display:flex;background:#0b0f1a;color:white;}
 .sidebar{width:230px;height:100vh;background:#0f1424;padding:20px;}
-.sidebar h2{margin-bottom:20px;}
 .sidebar button{width:100%;margin:5px 0;padding:10px;background:#12172b;border:none;color:white;border-radius:8px;cursor:pointer;}
 .sidebar button:hover{background:#5865F2;}
-.main{flex:1;padding:20px;overflow:auto;}
-.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
-.online{color:#57F287;}
-.card{background:#12172b;padding:20px;border-radius:15px;margin-bottom:15px;transition:0.3s;animation:fadeIn 0.4s;}
-.card:hover{transform:translateY(-5px);}
-@keyframes fadeIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+.main{flex:1;padding:20px;}
+.card{background:#12172b;padding:20px;border-radius:15px;margin-bottom:15px;}
 input,textarea,select{width:100%;padding:10px;margin:6px 0;background:#0f1424;border:none;color:white;border-radius:8px;}
 .mainbtn{background:#5865F2;border:none;padding:10px;width:100%;border-radius:8px;cursor:pointer;}
 .status{padding:4px 8px;border-radius:6px;font-size:12px;}
 .open{background:red;}
 .progress{background:orange;}
 .done{background:green;}
-.comment{background:#0f1424;padding:8px;border-radius:8px;margin-top:6px;}
-.badge{background:#5865F2;padding:2px 6px;font-size:10px;border-radius:6px;margin-left:5px;}
 .page{display:none;}
 .active{display:block;}
-.toast{position:fixed;bottom:20px;right:20px;background:#5865F2;padding:12px 20px;border-radius:10px;animation:slide 0.3s;}
-@keyframes slide{from{transform:translateX(100px);opacity:0;}to{transform:translateX(0);opacity:1;}}
 </style>
 </head>
 
 <body>
 
 <div class="sidebar">
-  <h2>TSG</h2>
   <button onclick="showPage('dashboard')">Dashboard</button>
   <button onclick="showPage('create')">Create</button>
-  <button onclick="showPage('stats')">Stats</button>
   <button onclick="adminLogin()">Admin</button>
 </div>
 
 <div class="main">
 
-<div class="topbar">
-  <h1>Support System</h1>
-  <span class="online">● Support Online</span>
-</div>
-
 <div id="login" class="card">
   <h2>Login</h2>
-  <input id="username" placeholder="Enter username">
-  <button class="mainbtn" onclick="login()">Continue</button>
+  <input id="username">
+  <button class="mainbtn" onclick="login()">Login</button>
 </div>
 
 <div id="dashboard" class="page"></div>
 
 <div id="create" class="page">
   <div class="card">
-    <h2>Create Report</h2>
-    <input id="name" placeholder="Your name">
-    <input id="search" placeholder="Search reports..." oninput="filterReports()">
-    <select id="type">
-      <option>Bug</option>
-      <option>Report</option>
-      <option>Question</option>
-    </select>
-    <textarea id="message" placeholder="Describe issue"></textarea>
+    <input id="name" placeholder="Name">
+    <textarea id="message"></textarea>
     <button class="mainbtn" onclick="createReport()">Submit</button>
   </div>
 </div>
 
-<div id="stats" class="page">
-  <div class="card">
-    <h2>Stats</h2>
-    <p id="total"></p>
-    <p id="open"></p>
-    <p id="resolved"></p>
-  </div>
 </div>
 
-</div>
+<!-- FIREBASE (OLD VERSION = WORKS WITH BUTTONS) -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
-<div id="toast"></div>
+<script>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, push, onValue, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-
-/* 🔥 YOUR FIREBASE CONFIG (FILLED) */
-const firebaseConfig = {
+/* FIREBASE CONFIG */
+firebase.initializeApp({
   apiKey: "AIzaSyCPIfra8YuSnh9C5NbglpRdg4KE5aigHDI",
   authDomain: "support-32682.firebaseapp.com",
   databaseURL: "https://support-32682-default-rtdb.firebaseio.com",
@@ -101,135 +69,82 @@ const firebaseConfig = {
   storageBucket: "support-32682.firebasestorage.app",
   messagingSenderId: "911974697786",
   appId: "1:911974697786:web:ac226eb90c19af72dbde03"
-};
+});
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+var db = firebase.database();
 
-let admin=false;
-let user="";
-let allReports=[];
+var admin=false;
+var user="";
 
-window.showPage=(p)=>{
+/* NAV */
+function showPage(p){
   document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
   document.getElementById(p).classList.add("active");
 }
 
-window.login=()=>{
+/* LOGIN */
+function login(){
   user=document.getElementById("username").value;
   document.getElementById("login").style.display="none";
   showPage("dashboard");
-  toast("Logged in as "+user);
 }
 
-window.adminLogin=()=>{
-  let code=prompt("Admin code");
+/* ADMIN */
+function adminLogin(){
+  var code=prompt("Admin code");
   if(code==="6118"){
     admin=true;
-    toast("Admin mode enabled");
+    alert("Admin enabled");
   }
 }
 
-window.createReport=()=>{
-  const name=document.getElementById("name").value;
-  const type=document.getElementById("type").value;
-  const message=document.getElementById("message").value;
+/* CREATE */
+function createReport(){
+  var name=document.getElementById("name").value;
+  var message=document.getElementById("message").value;
 
-  push(ref(db,"reports"),{
-    name,type,message,status:"open"
+  db.ref("reports").push({
+    name:name,
+    message:message,
+    status:"open"
   });
-
-  toast("Report created");
 }
 
-onValue(ref(db,"reports"),snap=>{
-  allReports=[];
-  let total=0, open=0, done=0;
-
-  snap.forEach(child=>{
-    const d=child.val();
-    d.id=child.key;
-    allReports.push(d);
-
-    total++;
-    if(d.status==="open") open++;
-    if(d.status==="done") done++;
-  });
-
-  document.getElementById("total").innerText="Total: "+total;
-  document.getElementById("open").innerText="Open: "+open;
-  document.getElementById("resolved").innerText="Resolved: "+done;
-
-  render(allReports);
-});
-
-function render(list){
-  const container=document.getElementById("dashboard");
+/* LOAD */
+db.ref("reports").on("value", snap=>{
+  var container=document.getElementById("dashboard");
   container.innerHTML="";
 
-  list.forEach(d=>{
-    let html=`<div class="card">
-      <h3>${d.type}</h3>
+  snap.forEach(child=>{
+    var d=child.val();
+    var id=child.key;
+
+    var html=`
+    <div class="card">
       <p>${d.message}</p>
-      <small>${d.name}</small><br><br>
-      <span class="status ${d.status}">${d.status}</span>`;
+      <small>${d.name}</small><br>
+      <span class="status ${d.status}">${d.status}</span>
+    `;
 
     if(admin){
       html+=`
-      <br><br>
-      <button onclick="setStatus('${d.id}','progress')">Progress</button>
-      <button onclick="setStatus('${d.id}','done')">Done</button>`;
+      <br>
+      <button onclick="setStatus('${id}','progress')">Progress</button>
+      <button onclick="setStatus('${id}','done')">Done</button>
+      `;
     }
 
-    html+=`<div>`;
-
-    if(d.comments){
-      Object.values(d.comments).forEach(c=>{
-        html+=`<div class="comment">
-          ${c.text} - ${c.user}
-          ${c.support ? '<span class="badge">SUPPORT</span>' : ''}
-        </div>`;
-      });
-    }
-
-    html+=`
-    <input id="c_${d.id}" placeholder="Comment">
-    <button onclick="comment('${d.id}')">Send</button>
-    </div></div>`;
+    html+=`</div>`;
 
     container.innerHTML+=html;
   });
+});
+
+/* STATUS */
+function setStatus(id,s){
+  db.ref("reports/"+id).update({status:s});
 }
 
-window.filterReports=()=>{
-  let q=document.getElementById("search").value.toLowerCase();
-  render(allReports.filter(r=>r.message.toLowerCase().includes(q)));
-}
-
-window.setStatus=(id,s)=>{
-  update(ref(db,"reports/"+id),{status:s});
-  toast("Updated");
-}
-
-window.comment=(id)=>{
-  const text=document.getElementById("c_"+id).value;
-
-  push(ref(db,"reports/"+id+"/comments"),{
-    text,
-    user:user,
-    support:admin
-  });
-
-  toast("Comment sent");
-}
-
-function toast(msg){
-  const t=document.createElement("div");
-  t.className="toast";
-  t.innerText=msg;
-  document.body.appendChild(t);
-  setTimeout(()=>t.remove(),2000);
-}
 </script>
 
 </body>
