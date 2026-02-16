@@ -6,7 +6,7 @@
 
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
 <!-- Fonts & Icons -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
@@ -20,14 +20,9 @@
   --hover:#334155;
   --text:#fff;
 }
-body {
-  margin:0; font-family:'Inter',sans-serif;
-  background:var(--bg); color:var(--text);
-  transition: background 0.3s;
-}
+body { margin:0; font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); }
 .sidebar {
-  width:220px; height:100vh; background:#020617;
-  position:fixed; padding:20px; display:flex; flex-direction:column;
+  width:220px; height:100vh; background:#020617; position:fixed; padding:20px; display:flex; flex-direction:column;
 }
 .sidebar h2 { margin-bottom:20px; font-weight:600; }
 .sidebar button {
@@ -67,10 +62,7 @@ button.action:hover { background:#2563eb; transform:translateY(-2px); }
   animation: fadeIn 0.5s ease;
 }
 
-@keyframes fadeIn {
-  from { opacity:0; transform:translateY(5px);}
-  to { opacity:1; transform:translateY(0);}
-}
+@keyframes fadeIn { from { opacity:0; transform:translateY(5px);} to { opacity:1; transform:translateY(0);} }
 
 .notification {
   position:fixed; top:20px; right:20px;
@@ -78,10 +70,7 @@ button.action:hover { background:#2563eb; transform:translateY(-2px); }
   color:white; box-shadow:0 4px 15px rgba(0,0,0,0.5);
   animation: slideIn 0.5s forwards; opacity:0;
 }
-@keyframes slideIn {
-  to { opacity:1; transform:translateX(0);}
-  from { opacity:0; transform:translateX(50px);}
-}
+@keyframes slideIn { to { opacity:1; transform:translateX(0);} from { opacity:0; transform:translateX(50px);} }
 </style>
 </head>
 
@@ -132,14 +121,13 @@ button.action:hover { background:#2563eb; transform:translateY(-2px); }
 const firebaseConfig = {
   apiKey: "AIzaSyCPIfra8YuSnh9C5NbglpRdg4KE5aigHDI",
   authDomain: "support-32682.firebaseapp.com",
-  databaseURL: "https://support-32682-default-rtdb.firebaseio.com",
   projectId: "support-32682",
-  storageBucket: "support-32682.firebasestorage.app",
+  storageBucket: "support-32682.appspot.com",
   messagingSenderId: "911974697786",
   appId: "1:911974697786:web:ac226eb90c19af72dbde03"
 };
 firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+const db = firebase.firestore();
 
 // ===== SETTINGS =====
 let isAdmin = false;
@@ -165,20 +153,19 @@ function submitReport(){
   const user = document.getElementById("username").value || "Anonymous";
   const text = document.getElementById("reportText").value;
   if(!text) return alert("Write something!");
-
   const support = supportUsers.includes(user);
 
-  db.ref("reports").push({
+  db.collection("reports").add({
     user, text, status:"open", support, comments:[]
-  });
+  }).then(()=>notify("Report submitted!"));
 
   document.getElementById("reportText").value="";
-  notify("Report submitted!");
 }
 
 // ===== LOAD REPORTS =====
-db.ref("reports").on("value", snap=>{
-  const data = snap.val();
+db.collection("reports").onSnapshot(snapshot=>{
+  const data = {};
+  snapshot.forEach(doc=>{ data[doc.id]=doc.data(); });
   renderReports(data);
 });
 
@@ -229,12 +216,14 @@ function comment(id){
   const text = prompt("Comment:");
   if(!text) return;
   const support = supportUsers.includes(user);
-  db.ref("reports/"+id+"/comments").once("value", snap=>{
-    let comments = snap.val() || [];
+
+  const docRef = db.collection("reports").doc(id);
+  docRef.get().then(doc=>{
+    let comments = doc.data().comments||[];
     comments.push({user,text,support});
-    db.ref("reports/"+id+"/comments").set(comments);
+    docRef.update({comments});
+    notify("Comment added!");
   });
-  notify("Comment added!");
 }
 
 // ===== ADMIN LOGIN =====
@@ -249,12 +238,12 @@ function loginAdmin(){
 
 // ===== ADMIN ACTIONS =====
 function setStatus(id,status){
-  db.ref("reports/"+id+"/status").set(status);
+  db.collection("reports").doc(id).update({status});
   notify("Status updated!");
 }
 
 function deleteReport(id){
-  db.ref("reports/"+id).remove();
+  db.collection("reports").doc(id).delete();
   notify("Report deleted!");
 }
 </script>
