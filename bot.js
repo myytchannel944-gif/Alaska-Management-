@@ -1,157 +1,150 @@
-// -------------------- Dependencies & Setup --------------------
 require('dotenv').config();
 const { 
     Client, GatewayIntentBits, Partials, Collection, SlashCommandBuilder, 
-    EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, 
-    ChannelType, PermissionsBitField, ButtonBuilder, ButtonStyle, REST, 
-    Routes, ModalBuilder, TextInputBuilder, TextInputStyle 
+    EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, 
+    ChannelType, PermissionsBitField, REST, Routes 
 } = require('discord.js');
 const express = require('express');
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
-    partials: [Partials.Channel, Partials.Message]
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.GuildMembers, 
+        GatewayIntentBits.MessageContent
+    ],
+    partials: [Partials.Channel, Partials.GuildMember]
 });
 
 client.commands = new Collection();
 const BOT_COLOR = "#de8ef4";
 
-// Web Server for Railway
-const app = express();
-app.get('/', (req, res) => res.send('Alaska Discohook Clone is Online.'));
-app.listen(process.env.PORT || 3000);
+// --- Utility: Log Fetcher ---
+async function getLogChannel(guild) {
+    return guild.channels.cache.find(c => c.name === 'alaska-logs') || 
+           await guild.channels.create({ name: 'alaska-logs', type: ChannelType.GuildText, permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }] });
+}
 
-// -------------------- Commands --------------------
+// -------------------- COMMANDS --------------------
 
-client.commands.set('discohook', {
-    data: new SlashCommandBuilder()
-        .setName('discohook')
-        .setDescription('Open the all-in-one interactive embed creator'),
+// 1. SETUP COMMAND
+client.commands.set('setup', {
+    data: new SlashCommandBuilder().setName('setup').setDescription('Deploy Verification & Ticket panels'),
     async execute(interaction) {
-        const embed = new EmbedBuilder()
-            .setTitle('Embed Title')
-            .setDescription('This is your live preview. Use the buttons below to change any field.')
-            .setColor(BOT_COLOR);
-
-        const row1 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('dh_edit_text').setLabel('Edit Text (Title/Desc/URL)').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('dh_edit_media').setLabel('Edit Images (Thumb/Large)').setStyle(ButtonStyle.Primary)
-        );
-
-        const row2 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('dh_edit_footer').setLabel('Edit Author & Footer').setStyle(ButtonStyle.Primary),
-            new StringSelectMenuBuilder().setCustomId('dh_color').setPlaceholder('Change Accent Color')
-                .addOptions([
-                    { label: 'Purple', value: '#de8ef4' }, { label: 'Red', value: '#ff0000' }, 
-                    { label: 'Blue', value: '#00aaff' }, { label: 'Green', value: '#2ecc71' }, { label: 'Black', value: '#000000' }
-                ])
-        );
-
-        const row3 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('dh_post').setLabel('🚀 Send Message').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('dh_reset').setLabel('Clear All').setStyle(ButtonStyle.Danger)
-        );
-
-        await interaction.reply({ 
-            content: '## 🛠️ Alaska Discohook Designer\nConfigure your message below. Only you can see this menu.',
-            embeds: [embed], 
-            components: [row1, row2, row3], 
-            ephemeral: true 
-        });
+        const vEmbed = new EmbedBuilder().setTitle('✅ Verification').setDescription('Click below to access the server.').setColor(BOT_COLOR);
+        const vRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('verify_user').setLabel('Verify').setStyle(ButtonStyle.Success));
+        const tEmbed = new EmbedBuilder().setTitle('🎫 Support').setDescription('Open a ticket for staff assistance.').setColor(BOT_COLOR);
+        const tRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('open_ticket').setLabel('Open Ticket').setStyle(ButtonStyle.Primary));
+        
+        await interaction.channel.send({ embeds: [vEmbed], components: [vRow] });
+        await interaction.channel.send({ embeds: [tEmbed], components: [tRow] });
+        await interaction.reply({ content: 'Panels deployed.', ephemeral: true });
     }
 });
 
-// -------------------- Interaction Logic --------------------
+// 2. MODERATION: BAN
+client.commands.set('ban', {
+    data: new SlashCommandBuilder().setName('ban').setDescription('Ban a member')
+        .addUserOption(opt => opt.setName('target').setDescription('The user to ban').setRequired(true))
+        .addStringOption(opt => opt.setName('reason').setDescription('Reason for ban')),
+    async execute(interaction) {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.BanMembers)) return interaction.reply({ content: 'No permission.', ephemeral: true });
+        const user = interaction.options.getUser('target');
+        const reason = interaction.options.getString('reason') || 'No reason provided';
+        await interaction.guild.members.ban(user, { reason });
+        await interaction.reply(`🔨 **${user.tag}** has been banned | ${reason}`);
+    }
+});
 
+// 3. MODERATION: PURGE
+client.commands.set('purge', {
+    data: new SlashCommandBuilder().setName('purge').setDescription('Delete messages')
+        .addIntegerOption(opt => opt.setName('amount').setDescription('Amount (1-100)').setRequired(true)),
+    async execute(interaction) {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return interaction.reply({ content: 'No permission.', ephemeral: true });
+        const amount = interaction.options.getInteger('amount');
+        await interaction.channel.bulkDelete(amount, true);
+        await interaction.reply({ content: `🧹 Deleted ${amount} messages.`, ephemeral: true });
+    }
+});
+
+// 4. UTILITY: USERINFO
+client.commands.set('userinfo', {
+    data: new SlashCommandBuilder().setName('userinfo').setDescription('Shows info about a user')
+        .addUserOption(opt => opt.setName('target').setDescription('The user')),
+    async execute(interaction) {
+        const user = interaction.options.getUser('target') || interaction.user;
+        const member = await interaction.guild.members.fetch(user.id);
+        const embed = new EmbedBuilder()
+            .setTitle(`${user.username}'s Info`)
+            .setThumbnail(user.displayAvatarURL())
+            .addFields(
+                { name: 'Joined Discord', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
+                { name: 'Joined Server', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`, inline: true },
+                { name: 'Roles', value: member.roles.cache.map(r => r).join(' ').replace('@everyone', '') || 'None' }
+            ).setColor(BOT_COLOR);
+        await interaction.reply({ embeds: [embed] });
+    }
+});
+
+// -------------------- EVENTS --------------------
+
+// JOIN LOGGER
+client.on('guildMemberAdd', async member => {
+    const logs = await getLogChannel(member.guild);
+    logs.send(`📥 **Join:** ${member.user.tag} joined the server.`);
+});
+
+// LEAVE LOGGER
+client.on('guildMemberRemove', async member => {
+    const logs = await getLogChannel(member.guild);
+    logs.send(`📤 **Leave:** ${member.user.tag} left the server.`);
+});
+
+// INTERACTION HANDLER
 client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
-        const command = client.commands.get(interaction.commandName);
-        if (command) await command.execute(interaction).catch(console.error);
+        const cmd = client.commands.get(interaction.commandName);
+        if (cmd) await cmd.execute(interaction);
     }
 
-    // 1. BUTTON CLICKS (Opening the specific Discohook sections)
     if (interaction.isButton()) {
-        const currentEmbed = interaction.message.embeds[0];
-
-        if (interaction.customId === 'dh_edit_text') {
-            const modal = new ModalBuilder().setCustomId('dh_modal_text').setTitle('Edit Content');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('title').setLabel('Title').setStyle(TextInputStyle.Short).setValue(currentEmbed.title || '').setRequired(false)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('url').setLabel('Title URL').setStyle(TextInputStyle.Short).setRequired(false).setValue(currentEmbed.url || '')),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('desc').setLabel('Description').setStyle(TextInputStyle.Paragraph).setValue(currentEmbed.description || '').setRequired(false))
-            );
-            return await interaction.showModal(modal);
+        const logs = await getLogChannel(interaction.guild);
+        
+        if (interaction.customId === 'verify_user') {
+            const role = interaction.guild.roles.cache.find(r => r.name === "Verified");
+            if (!role) return interaction.reply({ content: 'Create a "Verified" role!', ephemeral: true });
+            await interaction.member.roles.add(role);
+            return interaction.reply({ content: 'Verified!', ephemeral: true });
         }
 
-        if (interaction.customId === 'dh_edit_media') {
-            const modal = new ModalBuilder().setCustomId('dh_modal_media').setTitle('Edit Images');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('thumb').setLabel('Thumbnail URL (Top Right)').setStyle(TextInputStyle.Short).setRequired(false).setValue(currentEmbed.thumbnail?.url || '')),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('img').setLabel('Main Image URL (Bottom)').setStyle(TextInputStyle.Short).setRequired(false).setValue(currentEmbed.image?.url || ''))
-            );
-            return await interaction.showModal(modal);
+        if (interaction.customId === 'open_ticket') {
+            const ch = await interaction.guild.channels.create({
+                name: `ticket-${interaction.user.username}`,
+                permissionOverwrites: [
+                    { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel] }
+                ]
+            });
+            const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger));
+            await ch.send({ content: `Staff will help you soon, <@${interaction.user.id}>.`, components: [btn] });
+            return interaction.reply({ content: `Ticket: ${ch}`, ephemeral: true });
         }
 
-        if (interaction.customId === 'dh_edit_footer') {
-            const modal = new ModalBuilder().setCustomId('dh_modal_footer').setTitle('Edit Author & Footer');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('author').setLabel('Author Name').setStyle(TextInputStyle.Short).setRequired(false).setValue(currentEmbed.author?.name || '')),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('footer').setLabel('Footer Text').setStyle(TextInputStyle.Short).setRequired(false).setValue(currentEmbed.footer?.text || ''))
-            );
-            return await interaction.showModal(modal);
+        if (interaction.customId === 'close_ticket') {
+            await interaction.reply('Closing...');
+            setTimeout(() => interaction.channel.delete(), 5000);
         }
-
-        if (interaction.customId === 'dh_post') {
-            await interaction.channel.send({ embeds: [EmbedBuilder.from(currentEmbed)] });
-            return await interaction.update({ content: '✅ Message sent successfully!', components: [], embeds: [] });
-        }
-
-        if (interaction.customId === 'dh_reset') {
-            const reset = new EmbedBuilder().setTitle('Embed Title').setDescription('Cleared.').setColor(BOT_COLOR);
-            return await interaction.update({ embeds: [reset] });
-        }
-    }
-
-    // 2. DROPDOWN (Color Picker)
-    if (interaction.isStringSelectMenu() && interaction.customId === 'dh_color') {
-        const updated = EmbedBuilder.from(interaction.message.embeds[0]).setColor(interaction.values[0]);
-        return await interaction.update({ embeds: [updated] });
-    }
-
-    // 3. MODAL SUBMISSIONS (Processing the inputs)
-    if (interaction.isModalSubmit()) {
-        const updated = EmbedBuilder.from(interaction.message.embeds[0]);
-
-        if (interaction.customId === 'dh_modal_text') {
-            updated.setTitle(interaction.fields.getTextInputValue('title') || null);
-            updated.setURL(interaction.fields.getTextInputValue('url') || null);
-            updated.setDescription(interaction.fields.getTextInputValue('desc') || null);
-        }
-
-        if (interaction.customId === 'dh_modal_media') {
-            const t = interaction.fields.getTextInputValue('thumb');
-            const i = interaction.fields.getTextInputValue('img');
-            updated.setThumbnail(t || null);
-            updated.setImage(i || null);
-        }
-
-        if (interaction.customId === 'dh_modal_footer') {
-            const a = interaction.fields.getTextInputValue('author');
-            const f = interaction.fields.getTextInputValue('footer');
-            if (a) updated.setAuthor({ name: a });
-            if (f) updated.setFooter({ text: f });
-        }
-
-        await interaction.update({ embeds: [updated] });
     }
 });
 
-// -------------------- Registration --------------------
+// READY
 client.once('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-    const commands = Array.from(client.commands.values()).map(cmd => cmd.data.toJSON());
+    const commands = Array.from(client.commands.values()).map(c => c.data.toJSON());
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log(`✅ Discohook Bot Online as ${client.user.tag}`);
+    console.log('✅ Alaska Ultra Online');
 });
 
 client.login(process.env.TOKEN);
+const app = express(); app.get('/', (req, res) => res.send('Online')); app.listen(process.env.PORT || 3000);
