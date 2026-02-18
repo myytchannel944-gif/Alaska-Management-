@@ -1,0 +1,16 @@
+{
+  "name": "alaska-management",
+  "version": "1.0.0",
+  "description": "Discord bot for Alaska Management server",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "author": "Noah Diaz",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^15.0.0",
+    "dotenv": "^16.0.0",
+    "fs": "0.0.1-security"
+  }
+}
