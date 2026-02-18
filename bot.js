@@ -11,140 +11,129 @@ const client = new Client({
         GatewayIntentBits.Guilds, 
         GatewayIntentBits.GuildMessages, 
         GatewayIntentBits.GuildMembers, 
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.MessageContent // REQUIRED for Snipe
     ],
-    partials: [Partials.Channel, Partials.GuildMember]
+    partials: [Partials.Channel, Partials.GuildMember, Partials.Message]
 });
 
 client.commands = new Collection();
-const BOT_COLOR = "#de8ef4";
+const snipes = new Map(); // Memory for deleted messages
+const BOT_COLOR = "#f6b9bc";
 
-// --- Utility: Log Fetcher ---
-async function getLogChannel(guild) {
-    return guild.channels.cache.find(c => c.name === 'alaska-logs') || 
-           await guild.channels.create({ name: 'alaska-logs', type: ChannelType.GuildText, permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }] });
-}
+// Web server for Railway
+const app = express();
+app.get('/', (req, res) => res.send('Alaska Ultra is Online.'));
+app.listen(process.env.PORT || 3000);
 
-// -------------------- COMMANDS --------------------
+// -------------------- NEW COMMANDS: SNIPE & MUTE --------------------
 
-// 1. SETUP COMMAND
-client.commands.set('setup', {
-    data: new SlashCommandBuilder().setName('setup').setDescription('Deploy Verification & Ticket panels'),
+// 1. SNIPE COMMAND
+client.commands.set('snipe', {
+    data: new SlashCommandBuilder().setName('snipe').setDescription('Show the last deleted message in this channel'),
     async execute(interaction) {
-        const vEmbed = new EmbedBuilder().setTitle('✅ Verification').setDescription('Click below to access the server.').setColor(BOT_COLOR);
-        const vRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('verify_user').setLabel('Verify').setStyle(ButtonStyle.Success));
-        const tEmbed = new EmbedBuilder().setTitle('🎫 Support').setDescription('Open a ticket for staff assistance.').setColor(BOT_COLOR);
-        const tRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('open_ticket').setLabel('Open Ticket').setStyle(ButtonStyle.Primary));
-        
-        await interaction.channel.send({ embeds: [vEmbed], components: [vRow] });
-        await interaction.channel.send({ embeds: [tEmbed], components: [tRow] });
-        await interaction.reply({ content: 'Panels deployed.', ephemeral: true });
-    }
-});
+        const msg = snipes.get(interaction.channel.id);
+        if (!msg) return interaction.reply({ content: "There's nothing to snipe!", ephemeral: true });
 
-// 2. MODERATION: BAN
-client.commands.set('ban', {
-    data: new SlashCommandBuilder().setName('ban').setDescription('Ban a member')
-        .addUserOption(opt => opt.setName('target').setDescription('The user to ban').setRequired(true))
-        .addStringOption(opt => opt.setName('reason').setDescription('Reason for ban')),
-    async execute(interaction) {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.BanMembers)) return interaction.reply({ content: 'No permission.', ephemeral: true });
-        const user = interaction.options.getUser('target');
-        const reason = interaction.options.getString('reason') || 'No reason provided';
-        await interaction.guild.members.ban(user, { reason });
-        await interaction.reply(`🔨 **${user.tag}** has been banned | ${reason}`);
-    }
-});
-
-// 3. MODERATION: PURGE
-client.commands.set('purge', {
-    data: new SlashCommandBuilder().setName('purge').setDescription('Delete messages')
-        .addIntegerOption(opt => opt.setName('amount').setDescription('Amount (1-100)').setRequired(true)),
-    async execute(interaction) {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return interaction.reply({ content: 'No permission.', ephemeral: true });
-        const amount = interaction.options.getInteger('amount');
-        await interaction.channel.bulkDelete(amount, true);
-        await interaction.reply({ content: `🧹 Deleted ${amount} messages.`, ephemeral: true });
-    }
-});
-
-// 4. UTILITY: USERINFO
-client.commands.set('userinfo', {
-    data: new SlashCommandBuilder().setName('userinfo').setDescription('Shows info about a user')
-        .addUserOption(opt => opt.setName('target').setDescription('The user')),
-    async execute(interaction) {
-        const user = interaction.options.getUser('target') || interaction.user;
-        const member = await interaction.guild.members.fetch(user.id);
         const embed = new EmbedBuilder()
-            .setTitle(`${user.username}'s Info`)
-            .setThumbnail(user.displayAvatarURL())
-            .addFields(
-                { name: 'Joined Discord', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-                { name: 'Joined Server', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`, inline: true },
-                { name: 'Roles', value: member.roles.cache.map(r => r).join(' ').replace('@everyone', '') || 'None' }
-            ).setColor(BOT_COLOR);
+            .setAuthor({ name: msg.author.tag, iconURL: msg.author.displayAvatarURL() })
+            .setDescription(msg.content || "[No text content]")
+            .setFooter({ text: `Sniped by ${interaction.user.tag}` })
+            .setTimestamp(msg.createdAt)
+            .setColor(BOT_COLOR);
+
+        if (msg.image) embed.setImage(msg.image);
+
         await interaction.reply({ embeds: [embed] });
     }
 });
 
-// -------------------- EVENTS --------------------
+// 2. MUTE (TIMEOUT) COMMAND
+client.commands.set('mute', {
+    data: new SlashCommandBuilder().setName('mute').setDescription('Mute (Timeout) a member')
+        .addUserOption(opt => opt.setName('target').setDescription('The user to mute').setRequired(true))
+        .addIntegerOption(opt => opt.setName('duration').setDescription('Duration in minutes').setRequired(true))
+        .addStringOption(opt => opt.setName('reason').setDescription('Reason for mute')),
+    async execute(interaction) {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) 
+            return interaction.reply({ content: 'You need "Moderate Members" permission.', ephemeral: true });
 
-// JOIN LOGGER
-client.on('guildMemberAdd', async member => {
-    const logs = await getLogChannel(member.guild);
-    logs.send(`📥 **Join:** ${member.user.tag} joined the server.`);
+        const user = interaction.options.getMember('target');
+        const duration = interaction.options.getInteger('duration');
+        const reason = interaction.options.getString('reason') || 'No reason provided';
+
+        if (!user.manageable) return interaction.reply({ content: "I can't mute this user (higher rank).", ephemeral: true });
+
+        await user.timeout(duration * 60 * 1000, reason);
+        await interaction.reply(`🔇 **${user.user.tag}** has been muted for ${duration} minutes. | ${reason}`);
+    }
 });
 
-// LEAVE LOGGER
-client.on('guildMemberRemove', async member => {
-    const logs = await getLogChannel(member.guild);
-    logs.send(`📤 **Leave:** ${member.user.tag} left the server.`);
+// -------------------- EVENT LISTENERS --------------------
+
+// SNIPE TRACKER: Catches deleted messages
+client.on('messageDelete', async (message) => {
+    if (message.partial || message.author?.bot) return;
+    
+    snipes.set(message.channel.id, {
+        content: message.content,
+        author: message.author,
+        createdAt: message.createdAt,
+        image: message.attachments.first()?.proxyURL || null
+    });
+});
+
+// SETUP COMMAND (Verification & Tickets)
+client.commands.set('setup', {
+    data: new SlashCommandBuilder().setName('setup').setDescription('Deploy Panels'),
+    async execute(interaction) {
+        const tEmbed = new EmbedBuilder()
+            .setTitle('🎫 Support & Inquiries')
+            .setDescription('Click below to open a private ticket.')
+            .setColor(BOT_COLOR)
+            .setImage('https://output.googleusercontent.com/static/s/8f8b8/image_generation_content/0.png');
+
+        const tRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('open_ticket').setLabel('Create Ticket').setStyle(ButtonStyle.Secondary).setEmoji('📩')
+        );
+
+        await interaction.channel.send({ embeds: [tEmbed], components: [tRow] });
+        await interaction.reply({ content: 'Deployed!', ephemeral: true });
+    }
 });
 
 // INTERACTION HANDLER
 client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
         const cmd = client.commands.get(interaction.commandName);
-        if (cmd) await cmd.execute(interaction);
+        if (cmd) await cmd.execute(interaction).catch(console.error);
     }
 
     if (interaction.isButton()) {
-        const logs = await getLogChannel(interaction.guild);
-        
-        if (interaction.customId === 'verify_user') {
-            const role = interaction.guild.roles.cache.find(r => r.name === "Verified");
-            if (!role) return interaction.reply({ content: 'Create a "Verified" role!', ephemeral: true });
-            await interaction.member.roles.add(role);
-            return interaction.reply({ content: 'Verified!', ephemeral: true });
-        }
-
         if (interaction.customId === 'open_ticket') {
             const ch = await interaction.guild.channels.create({
-                name: `ticket-${interaction.user.username}`,
+                name: `support-${interaction.user.username}`,
                 permissionOverwrites: [
                     { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
                     { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel] }
                 ]
             });
             const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger));
-            await ch.send({ content: `Staff will help you soon, <@${interaction.user.id}>.`, components: [btn] });
-            return interaction.reply({ content: `Ticket: ${ch}`, ephemeral: true });
+            await ch.send({ content: `Staff will assist you shortly, <@${interaction.user.id}>.`, components: [btn] });
+            return interaction.reply({ content: `Ticket created: ${ch}`, ephemeral: true });
         }
-
         if (interaction.customId === 'close_ticket') {
             await interaction.reply('Closing...');
-            setTimeout(() => interaction.channel.delete(), 5000);
+            setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
         }
     }
 });
 
-// READY
+// READY & SYNC
 client.once('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     const commands = Array.from(client.commands.values()).map(c => c.data.toJSON());
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('✅ Alaska Ultra Online');
+    console.log(`🚀 Alaska Ultra (Snipe/Mute/Support) is Online!`);
 });
 
 client.login(process.env.TOKEN);
-const app = express(); app.get('/', (req, res) => res.send('Online')); app.listen(process.env.PORT || 3000);
