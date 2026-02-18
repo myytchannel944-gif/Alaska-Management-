@@ -1,27 +1,6 @@
-// -------------------- Auto-generate package.json if missing --------------------
-const fs = require('fs');
-const path = './package.json';
-
-if (!fs.existsSync(path)) {
-    const pkg = {
-        "name": "alaska-management-bot",
-        "version": "1.1.0",
-        "description": "All-in-one Discord bot with ticket system and interactive embed builder",
-        "main": "bot.js",
-        "scripts": { "start": "node bot.js" },
-        "dependencies": {
-            "discord.js": "^14.15.0",
-            "dotenv": "^16.3.1",
-            "express": "^4.18.2"
-        },
-        "engines": { "node": ">=18.x" }
-    };
-    fs.writeFileSync(path, JSON.stringify(pkg, null, 2));
-    console.log("✅ package.json created!");
-}
-
 // -------------------- Bot Dependencies --------------------
 require('dotenv').config();
+const fs = require('fs');
 const { 
     Client, GatewayIntentBits, Partials, Collection, SlashCommandBuilder, 
     EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ComponentType, 
@@ -34,7 +13,7 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds, 
         GatewayIntentBits.GuildMessages, 
-        GatewayIntentBits.MessageContent, // CRITICAL for transcripts
+        GatewayIntentBits.MessageContent, // CRITICAL: Must be enabled in Dev Portal
         GatewayIntentBits.GuildMembers
     ],
     partials: [Partials.Channel, Partials.Message]
@@ -117,13 +96,11 @@ client.commands.set('embedbuilder', {
 
 // -------------------- Interaction Handler --------------------
 client.on('interactionCreate', async interaction => {
-    // 1. Slash Commands
     if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
         if (command) try { await command.execute(interaction); } catch (e) { console.error(e); }
     }
 
-    // 2. Ticket Menu
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_menu') {
         const { category, staffRole } = await ensureCategoryAndLog(interaction.guild);
         
@@ -145,7 +122,6 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ content: `Ticket created: ${channel}`, ephemeral: true });
     }
 
-    // 3. Buttons & Modals
     if (interaction.isButton()) {
         if (interaction.customId === 'close_ticket') {
             const { logChannel } = await ensureCategoryAndLog(interaction.guild);
@@ -156,7 +132,7 @@ client.on('interactionCreate', async interaction => {
             
             setTimeout(() => {
                 interaction.channel.delete().catch(() => {});
-                if (fs.existsSync(file)) fs.unlinkSync(file); // Cleanup disk
+                if (fs.existsSync(file)) fs.unlinkSync(file); 
             }, 5000);
         }
 
