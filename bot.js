@@ -1,21 +1,26 @@
 require('dotenv').config();
 const fs = require('fs');
 const { 
-    Client, GatewayIntentBits, Partials, Collection, SlashCommandBuilder, 
+    Client, GatewayIntentBits, Partials, Collection, 
     EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, 
-    ChannelType, PermissionsBitField, REST, Routes, StringSelectMenuBuilder, 
+    ChannelType, PermissionsBitField, StringSelectMenuBuilder, 
     ModalBuilder, TextInputBuilder, TextInputStyle 
 } = require('discord.js');
 const express = require('express');
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent],
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent
+    ],
     partials: [Partials.Channel, Partials.GuildMember, Partials.Message]
 });
 
-client.commands = new Collection();
 const snipes = new Map(); 
 const BOT_COLOR = "#f6b9bc"; 
+const PREFIX = ".";
 
 // --- Permanent Banner Configuration ---
 const BANNER_URL = "https://cdn.discordapp.com/attachments/1472295068231532808/1473557629749039155/ocbvKoC.jpg?ex=6996a4fc&is=6995537c&hm=e38629356f5050e338cf33bed692c2caed54a6970a54da2ae1a0a75396cb932f&";
@@ -30,98 +35,140 @@ const app = express();
 app.get('/', (req, res) => res.send('Alaska Apex Sentinel is live.'));
 app.listen(process.env.PORT || 3000);
 
-// -------------------- Core Professional Commands --------------------
+// -------------------- Command Logic --------------------
 
-client.commands.set('lockdown', {
-    data: new SlashCommandBuilder().setName('lockdown').setDescription('Restrict access to the current channel'),
-    async execute(interaction) {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) return interaction.reply({ content: 'Access denied: Management permissions required.', ephemeral: true });
-        await interaction.channel.permissionOverwrites.edit(interaction.guild.id, { SendMessages: false });
-        await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🔒 Lockdown').setDescription('This channel has been restricted by Management.').setColor('#ff4757')] });
+const commands = {
+    help: {
+        async execute(message) {
+            const helpEmbed = new EmbedBuilder()
+                .setTitle('🏛️ System Command Directory')
+                .setDescription('Below is a list of administrative and utility commands available for the Apex Sentinel system.')
+                .addFields(
+                    { name: '`.setup`', value: 'Deploys the support panel. \n*Usage: .setup @General @IA @Management #logs*' },
+                    { name: '`.lockdown`', value: 'Restricts messaging in the current channel.' },
+                    { name: '`.unlock`', value: 'Restores messaging in the current channel.' },
+                    { name: '`.snipe`', value: 'Recovers the most recently deleted message.' },
+                    { name: '`.embedbuilder`', value: 'Opens the executive embed creation tool.' }
+                )
+                .setColor(BOT_COLOR)
+                .setFooter({ text: 'Alaska Executive Operations' });
+            
+            await message.reply({ embeds: [helpEmbed] });
+        }
+    },
+
+    embedbuilder: {
+        async execute(message) {
+            const warningEmbed = new EmbedBuilder()
+                .setTitle('⚠️ Maintenance')
+                .setDescription('The **Executive Embed Builder** is currently undergoing maintenance and is unavailable at the moment.')
+                .setColor('#f1c40f')
+                .setFooter({ text: 'Alaska System Services' });
+            
+            await message.reply({ embeds: [warningEmbed] });
+        }
+    },
+
+    lockdown: {
+        async execute(message) {
+            if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) return;
+            await message.channel.permissionOverwrites.edit(message.guild.id, { SendMessages: false });
+            await message.channel.send({ 
+                embeds: [new EmbedBuilder().setTitle('🔒 Lockdown').setDescription('This channel has been restricted by Management.').setColor('#ff4757')] 
+            });
+        }
+    },
+
+    unlock: {
+        async execute(message) {
+            if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) return;
+            await message.channel.permissionOverwrites.edit(message.guild.id, { SendMessages: null });
+            await message.channel.send({ 
+                embeds: [new EmbedBuilder().setTitle('🔓 Unlocked').setDescription('Standard communication has been resumed.').setColor('#2ecc71')] 
+            });
+        }
+    },
+
+    snipe: {
+        async execute(message) {
+            const msg = snipes.get(message.channel.id);
+            if (!msg) return message.reply('No recently deleted messages found in this channel.');
+            await message.channel.send({ 
+                embeds: [new EmbedBuilder()
+                    .setAuthor({ name: msg.author, iconURL: msg.avatar })
+                    .setDescription(msg.content || "[No content]")
+                    .setColor(BOT_COLOR)
+                    .setFooter({ text: `Detected at: ${msg.time}` })]
+            });
+        }
+    },
+
+    setup: {
+        async execute(message, args) {
+            if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+
+            const generalRole = message.mentions.roles.at(0) || message.guild.roles.cache.get(args[0]);
+            const iaRole      = message.mentions.roles.at(1) || message.guild.roles.cache.get(args[1]);
+            const mgmtRole    = message.mentions.roles.at(2) || message.guild.roles.cache.get(args[2]);
+            const logChannel  = message.mentions.channels.first() || message.guild.channels.cache.get(args[3]);
+
+            if (!generalRole || !iaRole || !mgmtRole || !logChannel) {
+                return message.reply('**Invalid Setup.** Usage: `.setup @General @InternalAffairs @Management #logs`');
+            }
+
+            config = { generalRole: generalRole.id, staffRole: iaRole.id, mgmtRole: mgmtRole.id, logChannel: logChannel.id };
+            saveData('./config.json', config);
+
+            const mainEmbed = new EmbedBuilder()
+                .setTitle('🏛️ Support & Relations')
+                .setDescription('Please select the appropriate department below to open an inquiry. Our executive team will be with you shortly.')
+                .setImage(BANNER_URL)
+                .setColor(BOT_COLOR);
+
+            const menus = [
+                new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket_general').setPlaceholder('General Support').addOptions([
+                    { label: 'General Questions', value: 'General Questions', emoji: '❓' },
+                    { label: 'Member Reports', value: 'Member Reports', emoji: '👥' },
+                    { label: 'Server Bugs', value: 'Server Bugs', emoji: '🐛' },
+                    { label: 'Partnerships', value: 'Partnerships', emoji: '🤝' }
+                ])),
+                new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket_ia').setPlaceholder('Internal Affairs').addOptions([
+                    { label: 'Staff Reports', value: 'Staff Reports', emoji: '👮' },
+                    { label: 'Staff Appeals', value: 'Staff Appeals', emoji: '⚖️' },
+                    { label: 'Severe Matters', value: 'Severe Matters', emoji: '⚠️' },
+                    { label: 'Staff Misconduct', value: 'Staff Misconduct', emoji: '🛑' }
+                ])),
+                new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket_mgmt').setPlaceholder('Management').addOptions([
+                    { label: 'Claiming Perks', value: 'Claiming Perks', emoji: '💎' },
+                    { label: 'Appealing Punishments', value: 'Appealing Punishments', emoji: '🔨' }
+                ]))
+            ];
+
+            await message.channel.send({ embeds: [mainEmbed], components: menus });
+            await message.reply('✅ Infrastructure successfully deployed with your custom banner.');
+        }
     }
+};
+
+// -------------------- Event Handlers --------------------
+
+client.on('messageCreate', async message => {
+    if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const cmdName = args.shift().toLowerCase();
+    if (commands[cmdName]) await commands[cmdName].execute(message, args);
 });
-
-client.commands.set('unlock', {
-    data: new SlashCommandBuilder().setName('unlock').setDescription('Restore access to the current channel'),
-    async execute(interaction) {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) return interaction.reply({ content: 'Access denied: Management permissions required.', ephemeral: true });
-        await interaction.channel.permissionOverwrites.edit(interaction.guild.id, { SendMessages: null });
-        await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🔓 Unlocked').setDescription('Standard communication has been resumed.').setColor('#2ecc71')] });
-    }
-});
-
-client.commands.set('snipe', {
-    data: new SlashCommandBuilder().setName('snipe').setDescription('Recover the most recently deleted message'),
-    async execute(interaction) {
-        const msg = snipes.get(interaction.channel.id);
-        if (!msg) return interaction.reply({ content: 'No recently deleted messages found in this channel.', ephemeral: true });
-        await interaction.reply({ embeds: [new EmbedBuilder().setAuthor({ name: msg.author, iconURL: msg.avatar }).setDescription(msg.content || "[No content]").setColor(BOT_COLOR).setFooter({ text: `Detected at: ${msg.time}` })] });
-    }
-});
-
-// -------------------- Support Infrastructure (Setup) --------------------
-
-client.commands.set('setup', {
-    data: new SlashCommandBuilder()
-        .setName('setup')
-        .setDescription('Deploy the professional support panel')
-        .addRoleOption(opt => opt.setName('general').setDescription('Role for General Support').setRequired(true))
-        .addRoleOption(opt => opt.setName('internal_affairs').setDescription('Role for Internal Affairs').setRequired(true))
-        .addRoleOption(opt => opt.setName('management').setDescription('Role for Management Support').setRequired(true))
-        .addChannelOption(opt => opt.setName('log_channel').setDescription('Channel for administrative logs').setRequired(true)),
-    async execute(interaction) {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: 'Administrator access is required to deploy infrastructure.', ephemeral: true });
-        
-        config.generalRole = interaction.options.getRole('general').id;
-        config.staffRole = interaction.options.getRole('internal_affairs').id;
-        config.mgmtRole = interaction.options.getRole('management').id;
-        config.logChannel = interaction.options.getChannel('log_channel').id;
-        saveData('./config.json', config);
-
-        const mainEmbed = new EmbedBuilder()
-            .setTitle('🏛️ Support & Relations')
-            .setDescription('Please select the appropriate department below to open an inquiry. Our executive team will be with you shortly.')
-            .setImage(BANNER_URL)
-            .setColor(BOT_COLOR);
-
-        const gMenu = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket_general').setPlaceholder('General Support').addOptions([
-            { label: 'General Questions', value: 'General Questions', emoji: '❓' },
-            { label: 'Member Reports', value: 'Member Reports', emoji: '👥' },
-            { label: 'Server Bugs', value: 'Server Bugs', emoji: '🐛' },
-            { label: 'Partnerships', value: 'Partnerships', emoji: '🤝' }
-        ]));
-
-        const iMenu = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket_ia').setPlaceholder('Internal Affairs').addOptions([
-            { label: 'Staff Reports', value: 'Staff Reports', emoji: '👮' },
-            { label: 'Staff Appeals', value: 'Staff Appeals', emoji: '⚖️' },
-            { label: 'Severe Matters', value: 'Severe Matters', emoji: '⚠️' },
-            { label: 'Staff Misconduct', value: 'Staff Misconduct', emoji: '🛑' }
-        ]));
-
-        const mMenu = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket_mgmt').setPlaceholder('Management').addOptions([
-            { label: 'Claiming Perks', value: 'Claiming Perks', emoji: '💎' },
-            { label: 'Appealing Punishments', value: 'Appealing Punishments', emoji: '🔨' }
-        ]));
-
-        await interaction.channel.send({ embeds: [mainEmbed], components: [gMenu, iMenu, mMenu] });
-        await interaction.reply({ content: '✅ Infrastructure successfully deployed with professional grammar and custom banner.', ephemeral: true });
-    }
-});
-
-// -------------------- Interaction Logic --------------------
 
 client.on('interactionCreate', async interaction => {
-    if (interaction.isChatInputCommand()) {
-        const cmd = client.commands.get(interaction.commandName);
-        if (cmd) await cmd.execute(interaction);
-    }
-
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('ticket_')) {
         const cat = interaction.values[0];
         let roleId, deptName;
+        
         if (interaction.customId === 'ticket_general') { roleId = config.generalRole; deptName = "General Support"; }
         else if (interaction.customId === 'ticket_ia') { roleId = config.staffRole; deptName = "Internal Affairs"; }
         else { roleId = config.mgmtRole; deptName = "Management"; }
+
+        if (!roleId) return interaction.reply({ content: "Error: Roles not configured. Please run .setup again.", ephemeral: true });
 
         const ch = await interaction.guild.channels.create({
             name: `${cat.replace(/\s+/g, '-')}-${interaction.user.username}`.toLowerCase(),
@@ -134,6 +181,7 @@ client.on('interactionCreate', async interaction => {
         });
 
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('close_modal').setLabel('Resolve & Close').setStyle(ButtonStyle.Danger));
+        
         await ch.send({ 
             content: `**Department Alert:** ${deptName} Team <@&${roleId}>`, 
             embeds: [new EmbedBuilder()
@@ -142,6 +190,7 @@ client.on('interactionCreate', async interaction => {
                 .setColor(BOT_COLOR)], 
             components: [row] 
         });
+
         await interaction.reply({ content: `✅ Your inquiry has been created: ${ch}`, ephemeral: true });
     }
 
@@ -154,19 +203,19 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isModalSubmit() && interaction.customId === 'close_reason_modal') {
         const reason = interaction.fields.getTextInputValue('close_reason');
         const log = interaction.guild.channels.cache.get(config.logChannel);
-        if (log) log.send({ embeds: [new EmbedBuilder().setTitle('🔒 Session Resolved').addFields({ name: 'Executor', value: interaction.user.tag }, { name: 'Resolution Reason', value: reason }, { name: 'Channel', value: interaction.channel.name }).setColor('#ff4757').setTimestamp()] });
+        if (log) {
+            log.send({ embeds: [new EmbedBuilder().setTitle('🔒 Session Resolved').addFields({ name: 'Executor', value: interaction.user.tag }, { name: 'Resolution Reason', value: reason }, { name: 'Channel', value: interaction.channel.name }).setColor('#ff4757').setTimestamp()] });
+        }
         await interaction.reply('🔒 Resolving session and archiving channel...');
         setTimeout(() => interaction.channel.delete().catch(() => {}), 4000);
     }
 });
 
-client.on('messageDelete', m => { if (!m.author?.bot) snipes.set(m.channel.id, { content: m.content, author: m.author.tag, avatar: m.author.displayAvatarURL(), time: m.createdAt.toLocaleString() }); });
-
-client.on('ready', async () => {
-    const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-    const cmds = Array.from(client.commands.values()).map(c => c.data.toJSON());
-    await rest.put(Routes.applicationCommands(client.user.id), { body: cmds });
-    console.log(`✅ Alaska Apex Sentinel is online.`);
+client.on('messageDelete', m => {
+    if (!m.author?.bot && m.content) {
+        snipes.set(m.channel.id, { content: m.content, author: m.author.tag, avatar: m.author.displayAvatarURL(), time: m.createdAt.toLocaleString() });
+    }
 });
 
+client.once('ready', () => console.log(`✅ Alaska Apex Sentinel is online. Prefix: ${PREFIX}`));
 client.login(process.env.TOKEN);
