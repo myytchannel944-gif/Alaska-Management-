@@ -17,108 +17,152 @@ const client = new Client({
 
 client.commands = new Collection();
 const snipes = new Map(); 
-const BOT_COLOR = "#f6b9bc";
+const BOT_COLOR = "#f6b9bc"; 
 
-// --- Persistent Databases ---
+// --- Database Simulation ---
 const loadData = (file, fallback) => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : fallback;
 const saveData = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
-let config = loadData('./config.json', { ticketRole: null, staffStats: {} });
-let economy = loadData('./economy.json', {});
+let config = loadData('./config.json', { ticketRole: null, logChannel: null });
 
 // Web server for Railway
 const app = express();
-app.get('/', (req, res) => res.send('Alaska Infinite (No Levels) is Online.'));
+app.get('/', (req, res) => res.send('Alaska System is Live.'));
 app.listen(process.env.PORT || 3000);
 
-// -------------------- NEW ADVANCED COMMANDS --------------------
+// -------------------- PROFESSIONAL COMMANDS --------------------
 
-// 1. GIVEAWAY
-client.commands.set('giveaway', {
-    data: new SlashCommandBuilder().setName('giveaway').setDescription('Start a quick giveaway')
-        .addStringOption(o => o.setName('prize').setDescription('What are you giving away?').setRequired(true))
-        .addIntegerOption(o => o.setName('winners').setDescription('Number of winners').setRequired(true)),
+// 1. STATUS COMMAND
+client.commands.set('status', {
+    data: new SlashCommandBuilder()
+        .setName('status')
+        .setDescription('View the bot\'s current performance and uptime'),
     async execute(interaction) {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageEvents)) return interaction.reply({ content: "No perms.", ephemeral: true });
+        const uptime = Math.floor(process.uptime());
+        const hours = Math.floor(uptime / 3600);
+        const minutes = Math.floor((uptime % 3600) / 60);
         
-        const prize = interaction.options.getString('prize');
-        const winnersCount = interaction.options.getInteger('winners');
-        
-        const embed = new EmbedBuilder()
-            .setTitle('🎉 GIVEAWAY STARTED!')
-            .setDescription(`Prize: **${prize}**\nWinners: **${winnersCount}**\n\nReact with 🎉 to enter!`)
-            .setColor(BOT_COLOR)
-            .setFooter({ text: 'Giveaway ends manually or via timer logic' });
-
-        const msg = await interaction.reply({ embeds: [embed], fetchReply: true });
-        await msg.react('🎉');
-    }
-});
-
-// 2. POLL
-client.commands.set('poll', {
-    data: new SlashCommandBuilder().setName('poll').setDescription('Create a yes/no poll')
-        .addStringOption(o => o.setName('question').setDescription('The question to ask').setRequired(true)),
-    async execute(interaction) {
-        const question = interaction.options.getString('question');
-        const embed = new EmbedBuilder().setTitle('📊 Community Poll').setDescription(question).setColor(BOT_COLOR).setFooter({ text: `Asked by ${interaction.user.tag}` });
-        const msg = await interaction.reply({ embeds: [embed], fetchReply: true });
-        await msg.react('👍');
-        await msg.react('👎');
-    }
-});
-
-// 3. STORE (Economy Interaction)
-client.commands.set('store', {
-    data: new SlashCommandBuilder().setName('store').setDescription('Buy items with your Alaska Coins'),
-    async execute(interaction) {
-        const embed = new EmbedBuilder()
-            .setTitle('🏪 Alaska Global Store')
+        const statusEmbed = new EmbedBuilder()
+            .setTitle('📈 System Status')
             .addFields(
-                { name: 'VIP Role', value: 'Cost: $5,000 | `/buy item:vip`', inline: true },
-                { name: 'Custom Color', value: 'Cost: $2,000 | `/buy item:color`', inline: true }
-            ).setColor(BOT_COLOR);
-        await interaction.reply({ embeds: [embed] });
+                { name: 'Ping', value: `\`${client.ws.ping}ms\``, inline: true },
+                { name: 'Uptime', value: `\`${hours}h ${minutes}m\``, inline: true },
+                { name: 'Version', value: '`2.4.0-Infinite`', inline: true },
+                { name: 'Memory Usage', value: `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB\``, inline: true }
+            )
+            .setColor(BOT_COLOR)
+            .setFooter({ text: 'Alaska Operational Systems' });
+
+        await interaction.reply({ embeds: [statusEmbed] });
     }
 });
 
-// 4. ADVANCED MOD: LOCK/UNLOCK
-client.commands.set('lockdown', {
-    data: new SlashCommandBuilder().setName('lockdown').setDescription('Lock or Unlock the current channel')
-        .addBooleanOption(o => o.setName('status').setDescription('True to lock, False to unlock').setRequired(true)),
+// 2. SETUP COMMAND (Enhanced)
+client.commands.set('setup', {
+    data: new SlashCommandBuilder()
+        .setName('setup')
+        .setDescription('Deploy Professional Management Panels')
+        .addRoleOption(option => option.setName('staff_role').setDescription('Role for ticket access').setRequired(true))
+        .addChannelOption(option => option.setName('log_channel').setDescription('Channel for system logs').setRequired(true)),
     async execute(interaction) {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) return interaction.reply({ content: 'No perms.', ephemeral: true });
-        const status = interaction.options.getBoolean('status');
-        await interaction.channel.permissionOverwrites.edit(interaction.guild.id, { SendMessages: !status });
-        await interaction.reply(`🔒 Channel lockdown status: **${status ? 'Locked' : 'Unlocked'}**`);
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) 
+            return interaction.reply({ content: 'Insufficient Permissions.', ephemeral: true });
+
+        const staffRole = interaction.options.getRole('staff_role');
+        const logs = interaction.options.getChannel('log_channel');
+        
+        config.ticketRole = staffRole.id;
+        config.logChannel = logs.id;
+        saveData('./config.json', config);
+
+        const vEmbed = new EmbedBuilder()
+            .setTitle('🛡️ Identity Verification')
+            .setDescription('To ensure server security, verify your account below to unlock community channels.')
+            .setColor(BOT_COLOR);
+
+        const vRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('verify_user').setLabel('Verify Account').setStyle(ButtonStyle.Secondary)
+        );
+
+        const tEmbed = new EmbedBuilder()
+            .setTitle('📩 Support & Inquiries')
+            .setDescription('Select a category to open a private communication channel.')
+            .setImage('https://output.googleusercontent.com/static/s/8f8b8/image_generation_content/0.png')
+            .setColor(BOT_COLOR);
+
+        const tRow = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('ticket_select')
+                .setPlaceholder('Select category...')
+                .addOptions([
+                    { label: 'General Support', value: 'general', emoji: '🛠️' },
+                    { label: 'Player Reporting', value: 'report', emoji: '🚫' }
+                ])
+        );
+
+        await interaction.channel.send({ embeds: [vEmbed], components: [vRow] });
+        await interaction.channel.send({ embeds: [tEmbed], components: [tRow] });
+        await interaction.reply({ content: '✅ Panels deployed. System logs linked to ' + logs.toString(), ephemeral: true });
     }
 });
 
 // -------------------- EVENT ENGINE --------------------
 
-client.on('messageDelete', m => {
-    if (m.partial || m.author.bot) return;
-    snipes.set(m.channel.id, { content: m.content, author: m.author.tag, time: m.createdAt });
+// JOIN LOGGER
+client.on('guildMemberAdd', async member => {
+    if (!config.logChannel) return;
+    const logChan = member.guild.channels.cache.get(config.logChannel);
+    if (logChan) {
+        const joinEmbed = new EmbedBuilder()
+            .setAuthor({ name: 'User Joined', iconURL: member.user.displayAvatarURL() })
+            .setDescription(`${member.user} has joined the server.`)
+            .addFields({ name: 'Account Age', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>` })
+            .setColor('#2ecc71')
+            .setTimestamp();
+        logChan.send({ embeds: [joinEmbed] });
+    }
 });
 
 client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
         const cmd = client.commands.get(interaction.commandName);
-        if (cmd) await cmd.execute(interaction).catch(console.error);
+        if (cmd) await cmd.execute(interaction);
     }
 
-    // --- BUTTONS (Verification & Tickets) ---
     if (interaction.isButton()) {
         if (interaction.customId === 'verify_user') {
             const role = interaction.guild.roles.cache.find(r => r.name === "Verified");
             if (role) await interaction.member.roles.add(role);
-            return interaction.reply({ content: '✅ Verified!', ephemeral: true });
+            return interaction.reply({ content: '✅ Identity Verified.', ephemeral: true });
         }
         if (interaction.customId === 'close_ticket') {
-            await interaction.reply('🔒 Closing...');
-            setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+            await interaction.reply('🔒 Archiving channel...');
+            setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
         }
     }
+
+    if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
+        const staffId = config.ticketRole;
+        const channel = await interaction.guild.channels.create({
+            name: `ticket-${interaction.user.username}`,
+            permissionOverwrites: [
+                { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel] },
+                { id: staffId, allow: [PermissionsBitField.Flags.ViewChannel] }
+            ]
+        });
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
+        );
+        await channel.send({ content: `<@&${staffId}> | Support needed.`, components: [row] });
+        await interaction.reply({ content: `✅ Ticket: ${channel}`, ephemeral: true });
+    }
+});
+
+// SNIPE TRACKER
+client.on('messageDelete', m => {
+    if (m.partial || m.author?.bot) return;
+    snipes.set(m.channel.id, { content: m.content, author: m.author.tag, time: m.createdAt });
 });
 
 // -------------------- REGISTRATION --------------------
@@ -126,15 +170,17 @@ client.on('interactionCreate', async interaction => {
 client.once('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     const commands = Array.from(client.commands.values()).map(c => c.data.toJSON());
+    // Adding snipe to registration
+    commands.push(new SlashCommandBuilder().setName('snipe').setDescription('Recover last deleted message').toJSON());
     
-    // Core utility commands
-    commands.push(new SlashCommandBuilder().setName('setup').setDescription('Deploy Panels').toJSON());
-    commands.push(new SlashCommandBuilder().setName('snipe').setDescription('View last deleted message').toJSON());
-    commands.push(new SlashCommandBuilder().setName('balance').setDescription('Check coins').toJSON());
-    commands.push(new SlashCommandBuilder().setName('work').setDescription('Earn coins').toJSON());
-
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log(`🔥 ALASKA INFINITE (V3) ONLINE`);
+    
+    // Set professional presence
+    client.user.setPresence({
+        activities: [{ name: 'Alaska Management', type: 3 }], // Watching
+        status: 'online',
+    });
+    console.log(`✅ System Online.`);
 });
 
 client.login(process.env.TOKEN);
