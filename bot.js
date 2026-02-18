@@ -1,5 +1,5 @@
-// alaska-bot all-in-one with auto slash command registration + embed builder
-const { Client, GatewayIntentBits, Partials, Collection, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ChannelType, PermissionsBitField, ButtonBuilder, ButtonStyle, REST, Routes } = require('discord.js');
+// alaska-bot all-in-one with auto slash command registration
+const { Client, GatewayIntentBits, Partials, Collection, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ComponentType, ChannelType, PermissionsBitField, ButtonBuilder, ButtonStyle, REST, Routes } = require('discord.js');
 require('dotenv').config();
 const fs = require('fs');
 
@@ -62,41 +62,92 @@ client.commands.set('panel', {
 
 // -------------------- /embedbuilder command --------------------
 client.commands.set('embedbuilder', {
-    data: new SlashCommandBuilder()
-        .setName('embedbuilder')
-        .setDescription('Create a live interactive embed/dashboard'),
+    data: new SlashCommandBuilder().setName('embedbuilder').setDescription('Build a fully interactive embed/dashboard'),
     async execute(interaction) {
-        // Initial empty embed
         let embed = new EmbedBuilder()
-            .setTitle('Interactive Dashboard')
-            .setDescription('Use the buttons & dropdowns to edit this embed live')
             .setColor(BOT_COLOR)
-            .setTimestamp()
-            .setFooter({ text: 'Alaska Management Embed Builder' });
+            .setTitle('New Embed')
+            .setDescription('Use the buttons or dropdowns below to customize me!')
+            .setFooter({ text: 'Alaska Management' });
 
-        // Buttons for live editing
-        const row = new ActionRowBuilder().addComponents(
+        const buttonsRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('set_title').setLabel('Set Title').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('set_desc').setLabel('Set Description').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('set_color').setLabel('Set Color').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId('add_field').setLabel('Add Field').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('remove_field').setLabel('Remove Field').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('change_color').setLabel('Change Color').setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId('finish_embed').setLabel('Finish').setStyle(ButtonStyle.Danger)
         );
 
-        // Dropdown for preset options
-        const menu = new StringSelectMenuBuilder()
-            .setCustomId('embed_menu')
-            .setPlaceholder('Choose action')
-            .addOptions([
-                { label: 'Add Button', value: 'add_button' },
-                { label: 'Add Dropdown', value: 'add_dropdown' }
-            ]);
+        const dropdownRow = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('embed_options')
+                .setPlaceholder('Advanced options')
+                .addOptions([
+                    { label: 'Set Footer', value: 'set_footer' },
+                    { label: 'Set Thumbnail', value: 'set_thumb' },
+                    { label: 'Set Image', value: 'set_image' }
+                ])
+        );
 
-        const menuRow = new ActionRowBuilder().addComponents(menu);
+        const msg = await interaction.reply({ embeds: [embed], components: [buttonsRow, dropdownRow], fetchReply: true, ephemeral: true });
 
-        await interaction.reply({ embeds: [embed], components: [row, menuRow] });
+        const askInput = async (prompt) => {
+            await interaction.followUp({ content: prompt, ephemeral: true });
+            const filter = m => m.author.id === interaction.user.id;
+            const collected = await interaction.channel.awaitMessages({ filter, max: 1, time: 120000 });
+            return collected.first().content;
+        };
+
+        const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 900000 });
+        collector.on('collect', async i => {
+            if (i.user.id !== interaction.user.id) return i.reply({ content: 'Only the command user can edit this embed.', ephemeral: true });
+
+            if (i.customId === 'set_title') {
+                const title = await askInput('Enter the embed title:');
+                embed.setTitle(title);
+            } else if (i.customId === 'set_desc') {
+                const desc = await askInput('Enter the embed description:');
+                embed.setDescription(desc);
+            } else if (i.customId === 'set_color') {
+                const color = await askInput('Enter a hex color (e.g., #de8ef4):');
+                embed.setColor(color);
+            } else if (i.customId === 'add_field') {
+                const fieldInput = await askInput('Enter field as: `name | value | inline(true/false)`');
+                const [name, value, inline] = fieldInput.split('|').map(x => x.trim());
+                embed.addFields({ name, value, inline: inline === 'true' });
+            } else if (i.customId === 'finish_embed') {
+                collector.stop();
+                await i.update({ content: 'Embed finished!', embeds: [embed], components: [] });
+                interaction.channel.send({ embeds: [embed] });
+            }
+
+            await i.editReply({ embeds: [embed] });
+        });
+
+        const dropdownCollector = msg.createMessageComponentCollector({ componentType: ComponentType.StringSelect, time: 900000 });
+        dropdownCollector.on('collect', async sel => {
+            if (sel.user.id !== interaction.user.id) return sel.reply({ content: 'Only the command user can edit this embed.', ephemeral: true });
+
+            if (sel.values[0] === 'set_footer') {
+                const footer = await askInput('Enter the footer text:');
+                embed.setFooter({ text: footer });
+            } else if (sel.values[0] === 'set_thumb') {
+                const thumb = await askInput('Enter the thumbnail URL:');
+                embed.setThumbnail(thumb);
+            } else if (sel.values[0] === 'set_image') {
+                const img = await askInput('Enter the image URL:');
+                embed.setImage(img);
+            }
+
+            await sel.update({ embeds: [embed] });
+        });
+
+        collector.on('end', async () => await msg.edit({ components: [] }).catch(() => {}));
+        dropdownCollector.on('end', async () => await msg.edit({ components: [] }).catch(() => {}));
     }
 });
 
-// -------------------- Interaction handler --------------------
+// -------------------- Interaction handler for tickets --------------------
 client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
@@ -138,28 +189,18 @@ client.on('interactionCreate', async interaction => {
         logChannel.send({ content: `Ticket closed: ${interaction.channel.name}`, files: [transcript] });
         setTimeout(() => interaction.channel.delete(), 3000);
     }
-
-    // -------------------- Interactive Embed Buttons --------------------
-    if (interaction.isButton() || interaction.isStringSelectMenu()) {
-        // For simplicity, we just acknowledge clicks here — can extend to full live editing later
-        await interaction.reply({ content: 'Embed interaction clicked! (Live editing coming soon)', ephemeral: true });
-    }
 });
 
 // -------------------- Ready --------------------
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
 
-    // Register slash commands globally
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     const commands = Array.from(client.commands.values()).map(cmd => cmd.data.toJSON());
 
     try {
-        await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commands }
-        );
-        console.log('✅ Slash commands registered globally!');
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+        console.log('✅ Commands registered globally!');
     } catch (err) {
         console.error('❌ Failed to register commands:', err);
     }
