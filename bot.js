@@ -1,173 +1,336 @@
 require('dotenv').config();
 const fs = require('fs');
-const { 
+const {
     Client, GatewayIntentBits, Partials, SlashCommandBuilder,
-    EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, 
-    ChannelType, PermissionsBitField, REST, Routes, ActivityType, 
-    AttachmentBuilder, StringSelectMenuBuilder 
+    EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+    ChannelType, PermissionsBitField, REST, Routes, ActivityType,
+    AttachmentBuilder, StringSelectMenuBuilder
 } = require('discord.js');
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent],
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent
+    ],
     partials: [Partials.Channel, Partials.GuildMember, Partials.Message]
 });
 
 // ─── Constants & Banners ────────────────────────────────────────
-const BOT_COLOR = "#2f3136"; 
-const PROMO_BANNER = "https://cdn.discordapp.com/attachments/1341148810620833894/1341584988775874621/0c3d9331-496c-4cd8-8f09-e9fbedc9429b.jpg";
+const BOT_COLOR = "#2f3136";
+const PROMO_BANNER    = "https://cdn.discordapp.com/attachments/1341148810620833894/1341584988775874621/0c3d9331-496c-4cd8-8f09-e9fbedc9429b.jpg";
 const INFRACTION_BANNER = "https://cdn.discordapp.com/attachments/1341148810620833894/1341585148008435753/4bae16d5-a785-45f7-a5f3-103560ef0003.jpg";
+const SUPPORT_BANNER  = "https://assets.grok.com/users/44b33018-b8a5-43c6-ad8e-6d2518173db5/d36fb406-0d2a-47d2-8f3b-4db824f37de5/preview-image"; // ← added here
 
 const CONFIG_PATH = './config.json';
-const loadConfig = () => {
-    try {
-        return fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH)) : {};
-    } catch (e) { return {}; }
-};
-const saveConfig = (data) => fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2));
-let config = loadConfig();
 
-// ─── Interaction Handler ─────────────────────────────────────────
-client.on('interactionCreate', async (int) => {
-    if (!int.guild) return;
+let config = (() => {
+    try {
+        return fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) : {};
+    } catch {
+        return {};
+    }
+})();
+
+function saveConfig() {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+}
+
+// Allowed roles for ALL slash commands
+const ALLOWED_ROLE_IDS = new Set([
+    '1472278188469125355',
+    '1472278915136360691',
+    '1472279252274647112'
+]);
+
+function hasCommandPermission(member) {
+    if (!member) return false;
+    return member.roles.cache.some(role => ALLOWED_ROLE_IDS.has(role.id));
+}
+
+const ticketCooldowns = new Map(); // userId → timestamp
+
+// ─── Helpers ────────────────────────────────────────────────────
+function alaskaEmbed(title, color = BOT_COLOR) {
+    return new EmbedBuilder()
+        .setColor(color)
+        .setTitle(title)
+        .setTimestamp();
+}
+
+// ─── Global error protection ────────────────────────────────────
+process.on('unhandledRejection', reason => console.error('Unhandled Rejection:', reason));
+process.on('uncaughtException', err => console.error('Uncaught Exception:', err));
+
+// ─── Interaction Handler ────────────────────────────────────────
+client.on('interactionCreate', async int => {
+    if (!int.guild || int.user.bot) return;
 
     try {
+        // ─── Ticket category selection ─────────────────────────────
         if (int.isStringSelectMenu() && int.customId === 'ticket_type') {
+            if (ticketCooldowns.has(int.user.id)) {
+                const remaining = 30000 - (Date.now() - ticketCooldowns.get(int.user.id));
+                if (remaining > 0) {
+                    return int.reply({
+                        content: `⏳ Please wait ${Math.ceil(remaining / 1000)} seconds before opening another ticket.`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+            ticketCooldowns.set(int.user.id, Date.now());
+            setTimeout(() => ticketCooldowns.delete(int.user.id), 30000);
+
             await int.deferReply({ ephemeral: true });
+
+            if (!config.staffRole) {
+                return int.editReply({ content: '⚠️ Staff role not configured. Run /setup first.' });
+            }
+
             const department = int.values[0];
+            let pingRole;
 
-            let pingRole = config.staffRole; 
             if (department === 'internal-affairs') pingRole = config.iaRole;
-            if (department === 'management') pingRole = config.mgmtRole;
+            else if (department === 'management') pingRole = config.mgmtRole;
+            else pingRole = config.staffRole;
 
-            const ch = await int.guild.channels.create({
-                name: `${department}-${int.user.username}`,
+            if (!pingRole) {
+                return int.editReply({ content: '⚠️ Required role for this department not set.' });
+            }
+
+            const channel = await int.guild.channels.create({
+                name: `${department}-${int.user.username}`.slice(0, 99),
                 type: ChannelType.GuildText,
                 permissionOverwrites: [
                     { id: int.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                    { id: int.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                    { id: pingRole || int.guild.ownerId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+                    { id: int.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.EmbedLinks] },
+                    { id: pingRole, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageMessages] },
+                    { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
                 ]
-            }).catch(() => null);
-
-            if (!ch) return int.editReply("❌ Failed to create channel. Check permissions.");
-
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('close_ticket').setLabel('Close Ticket').setStyle(ButtonStyle.Danger));
-
-            await ch.send({ 
-                content: `${int.user} | ${pingRole ? `<@&${pingRole}>` : "@staff"}`,
-                embeds: [new EmbedBuilder()
-                    .setTitle(`🏛️ ${department.replace('-', ' ').toUpperCase()} Session`)
-                    .setColor(BOT_COLOR)
-                    .setDescription(`Welcome. A member of the team will be with you shortly.`)
-                    .setTimestamp()], 
-                components: [row] 
+            }).catch(err => {
+                console.error('Channel creation failed:', err);
+                return null;
             });
 
-            return int.editReply({ content: `✅ Ticket opened: ${ch}` });
+            if (!channel) {
+                return int.editReply({ content: '❌ Failed to create channel — check bot permissions.' });
+            }
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('close_ticket').setLabel('Close Ticket').setStyle(ButtonStyle.Danger)
+            );
+
+            await channel.send({
+                content: `${int.user} | <@&${pingRole}>`,
+                embeds: [alaskaEmbed(`🏛️ ${department.replace('-', ' ').toUpperCase()} Session`)
+                    .setDescription('Welcome. A member of the team will be with you shortly.\nPlease explain your situation in detail.')
+                    .setImage(SUPPORT_BANNER)  // ← Support banner added here
+                ],
+                components: [row]
+            }).catch(console.error);
+
+            return int.editReply({ content: `✅ Ticket created: ${channel}` });
         }
 
-        if (int.isChatInputCommand()) {
-            const { commandName, options } = int;
+        // ─── Close ticket button ───────────────────────────────────
+        if (int.isButton() && int.customId === 'close_ticket') {
+            await int.deferUpdate().catch(() => {});
 
-            if (commandName === 'embed') {
-                return int.reply({ 
-                    embeds: [new EmbedBuilder().setColor('#ff0000').setTitle('🚫 Access Denied').setDescription('This service is Down right now contact the owner for further details.')], 
-                    ephemeral: true 
+            await int.channel.send('🗑️ Closing ticket in 5 seconds...').catch(() => {});
+            setTimeout(() => int.channel.delete().catch(() => {}), 5000);
+            return;
+        }
+
+        // ─── Slash commands ────────────────────────────────────────
+        if (int.isChatInputCommand()) {
+            const { commandName } = int;
+
+            // Permission check for ALL slash commands
+            if (!hasCommandPermission(int.member)) {
+                return int.reply({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor('#ff5555')
+                            .setTitle('Access Denied')
+                            .setDescription('This command is restricted to authorized personnel only.')
+                    ],
+                    ephemeral: true
                 });
             }
 
-            if (commandName === 'edit') {
-                const messageId = options.getString('message_id');
-                const newContent = options.getString('content');
-                const targetMsg = await int.channel.messages.fetch(messageId).catch(() => null);
-                
-                if (!targetMsg || targetMsg.author.id !== client.user.id) {
-                    return int.reply({ content: "❌ Error: I can only edit my own messages. Contact the owner for further details.", ephemeral: true });
-                }
-
-                const editedEmbed = EmbedBuilder.from(targetMsg.embeds[0]).setDescription(newContent);
-                await targetMsg.edit({ embeds: [editedEmbed] });
-                return int.reply({ content: "✅ Embed updated. Contact the owner for further details.", ephemeral: true });
+            // ── embed ───────────────────────────────────────────────
+            if (commandName === 'embed') {
+                return int.reply({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor('#ff0000')
+                            .setTitle('🚫 Access Denied')
+                            .setDescription('This service is Down right now contact the owner for further details.')
+                    ],
+                    ephemeral: true
+                });
             }
 
-            if (commandName === 'setup') {
-                config.logChannel = options.getChannel('logs').id;
-                config.staffRole = options.getRole('staff').id;
-                config.iaRole = options.getRole('ia_role').id;
-                config.mgmtRole = options.getRole('management_role').id;
-                saveConfig(config);
+            // ── edit ────────────────────────────────────────────────
+            if (commandName === 'edit') {
+                const messageId = int.options.getString('message_id');
+                const newContent = int.options.getString('content');
 
-                const selectMenu = new StringSelectMenuBuilder().setCustomId('ticket_type').setPlaceholder('Select Department...')
+                const targetMsg = await int.channel.messages.fetch(messageId).catch(() => null);
+
+                if (!targetMsg || targetMsg.author.id !== client.user.id) {
+                    return int.reply({
+                        content: "❌ I can only edit my own messages.",
+                        ephemeral: true
+                    });
+                }
+
+                const editedEmbed = EmbedBuilder.from(targetMsg.embeds[0] || {}).setDescription(newContent);
+                await targetMsg.edit({ embeds: [editedEmbed] }).catch(console.error);
+
+                return int.reply({ content: "✅ Embed updated.", ephemeral: true });
+            }
+
+            // ── setup ───────────────────────────────────────────────
+            if (commandName === 'setup') {
+                if (!int.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    return int.reply({ content: 'Only administrators can run setup.', ephemeral: true });
+                }
+
+                config.logChannel = int.options.getChannel('logs')?.id ?? null;
+                config.staffRole = int.options.getRole('staff')?.id ?? null;
+                config.iaRole = int.options.getRole('ia_role')?.id ?? null;
+                config.mgmtRole = int.options.getRole('management_role')?.id ?? null;
+                saveConfig();
+
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId('ticket_type')
+                    .setPlaceholder('Select Department...')
                     .addOptions([
                         { label: 'General Support', value: 'general', emoji: '❓' },
                         { label: 'Internal Affairs', value: 'internal-affairs', emoji: '👮' },
                         { label: 'Management', value: 'management', emoji: '💎' }
                     ]);
 
-                const setupEmbed = new EmbedBuilder()
+                const embed = new EmbedBuilder()
                     .setTitle('🏛️ Alaska Support & Relations')
                     .setColor(BOT_COLOR)
-                    .setDescription('Select a category below to initiate a private session.\n\n🔹 **General Support**\nServer help and partnerships.\n\n🔹 **Internal Affairs**\nStaff misconduct reports.\n\n🔹 **Management**\nExecutive appeals and perk claims.')
+                    .setDescription('Select a category below to initiate a private session.')
+                    .addFields(
+                        { name: '❓ General Support', value: 'Server help, questions, partnerships' },
+                        { name: '👮 Internal Affairs', value: 'Staff misconduct, player reports' },
+                        { name: '💎 Management', value: 'Executive appeals, perk claims' }
+                    )
                     .setImage(PROMO_BANNER);
 
-                await int.channel.send({ embeds: [setupEmbed], components: [new ActionRowBuilder().addComponents(selectMenu)] });
-                return int.reply({ content: "✅ Ticket Panel Deployed.", ephemeral: true });
+                await int.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(selectMenu)] });
+
+                return int.reply({ content: '✅ Ticket panel deployed.', ephemeral: true });
             }
 
+            // ── promote ─────────────────────────────────────────────
             if (commandName === 'promote') {
-                const user = options.getUser('user');
-                const embed = new EmbedBuilder().setTitle('🔔 Alaska State Staff Promotion').setColor(BOT_COLOR)
+                const user = int.options.getUser('user');
+                const embed = new EmbedBuilder()
+                    .setTitle('🔔 Alaska State Staff Promotion')
+                    .setColor(BOT_COLOR)
                     .setDescription(`Congratulations, ${user}! Your dedication has earned you a promotion!`)
-                    .addFields({ name: 'Rank', value: options.getString('rank'), inline: true }, { name: 'Reason', value: options.getString('reason'), inline: true })
-                    .setImage(PROMO_BANNER).setTimestamp();
+                    .addFields(
+                        { name: 'Rank', value: int.options.getString('rank'), inline: true },
+                        { name: 'Reason', value: int.options.getString('reason'), inline: true }
+                    )
+                    .setImage(PROMO_BANNER)
+                    .setTimestamp();
+
                 return int.reply({ content: `${user}`, embeds: [embed] });
             }
 
+            // ── infraction ──────────────────────────────────────────
             if (commandName === 'infraction') {
-                const user = options.getUser('user');
-                const embed = new EmbedBuilder().setTitle('⚖️ Formal Infraction Issued').setColor('#e74c3c')
-                    .addFields({ name: 'User', value: `${user}`, inline: true }, { name: 'Type', value: options.getString('type'), inline: true }, { name: 'Reason', value: options.getString('reason') })
-                    .setImage(INFRACTION_BANNER).setTimestamp();
+                const user = int.options.getUser('user');
+                const embed = new EmbedBuilder()
+                    .setTitle('⚖️ Formal Infraction Issued')
+                    .setColor('#e74c3c')
+                    .addFields(
+                        { name: 'User', value: `${user}`, inline: true },
+                        { name: 'Type', value: int.options.getString('type'), inline: true },
+                        { name: 'Reason', value: int.options.getString('reason') }
+                    )
+                    .setImage(INFRACTION_BANNER)
+                    .setTimestamp();
+
                 return int.reply({ embeds: [embed] });
             }
         }
 
-        if (int.isButton() && int.customId === 'close_ticket') {
-            await int.reply("📑 **Black Box: Archiving...**");
-            setTimeout(() => int.channel.delete().catch(() => {}), 3000);
-        }
-    } catch (e) { console.error(e); }
+    } catch (err) {
+        console.error('Interaction error:', err);
+        const msg = '⚠️ An error occurred. Try again or contact staff.';
+        try {
+            if (!int.replied && !int.deferred) {
+                await int.reply({ content: msg, ephemeral: true }).catch(() => {});
+            } else if (int.deferred) {
+                await int.editReply({ content: msg }).catch(() => {});
+            } else {
+                await int.followUp({ content: msg, ephemeral: true }).catch(() => {});
+            }
+        } catch {}
+    }
 });
 
-// FIXED COMMAND REGISTRATION (Removed SlashBuilder typo & added all descriptions)
-client.once('clientReady', async () => {
+// ─── Ready ──────────────────────────────────────────────────────
+client.once('ready', async () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+
+    const commands = [
+        new SlashCommandBuilder()
+            .setName('setup')
+            .setDescription('Deploy ticket panel & configure roles')
+            .addChannelOption(o => o.setName('logs').setDescription('Log channel').setRequired(true))
+            .addRoleOption(o => o.setName('staff').setDescription('General staff role').setRequired(true))
+            .addRoleOption(o => o.setName('ia_role').setDescription('Internal Affairs role').setRequired(true))
+            .addRoleOption(o => o.setName('management_role').setDescription('Management role').setRequired(true)),
+
+        new SlashCommandBuilder()
+            .setName('promote')
+            .setDescription('Announce staff promotion')
+            .addUserOption(o => o.setName('user').setRequired(true))
+            .addStringOption(o => o.setName('rank').setRequired(true))
+            .addStringOption(o => o.setName('reason').setRequired(true)),
+
+        new SlashCommandBuilder()
+            .setName('infraction')
+            .setDescription('Log formal infraction')
+            .addUserOption(o => o.setName('user').setRequired(true))
+            .addStringOption(o => o.setName('type').setRequired(true))
+            .addStringOption(o => o.setName('reason').setRequired(true)),
+
+        new SlashCommandBuilder()
+            .setName('embed')
+            .setDescription('Show maintenance message'),
+
+        new SlashCommandBuilder()
+            .setName('edit')
+            .setDescription('Edit bot message')
+            .addStringOption(o => o.setName('message_id').setDescription('Message ID').setRequired(true))
+            .addStringOption(o => o.setName('content').setDescription('New description').setRequired(true))
+    ];
+
+    const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+
     try {
-        const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-        const commands = [
-            new SlashCommandBuilder().setName('setup').setDescription('Deploy ticket panel')
-                .addChannelOption(o => o.setName('logs').setDescription('Logs channel').setRequired(true))
-                .addRoleOption(o => o.setName('staff').setDescription('General Staff').setRequired(true))
-                .addRoleOption(o => o.setName('ia_role').setDescription('IA Role').setRequired(true))
-                .addRoleOption(o => o.setName('management_role').setDescription('Management Role').setRequired(true)),
-            new SlashCommandBuilder().setName('promote').setDescription('Promote staff')
-                .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
-                .addStringOption(o => o.setName('rank').setDescription('New rank').setRequired(true))
-                .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(true)),
-            new SlashCommandBuilder().setName('infraction').setDescription('Log infraction')
-                .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
-                .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true))
-                .addStringOption(o => o.setName('reason').setDescription('Reason').setRequired(true)),
-            new SlashCommandBuilder().setName('embed').setDescription('Build a custom embed (Disabled)'),
-            new SlashCommandBuilder().setName('edit').setDescription('Edit a bot embed')
-                .addStringOption(o => o.setName('message_id').setDescription('The Message ID').setRequired(true))
-                .addStringOption(o => o.setName('content').setDescription('New Description').setRequired(true))
-        ];
         await rest.put(Routes.applicationCommands(client.user.id), { body: commands.map(c => c.toJSON()) });
-        console.log('✅ Alaska Build Online & Validated.');
-    } catch (error) { console.error(error); }
+        console.log('Slash commands registered.');
+    } catch (err) {
+        console.error('Command registration failed:', err);
+    }
+
+    client.user.setActivity('Alaska State RP', { type: ActivityType.Watching });
 });
 
-process.on('unhandledRejection', e => console.error(e));
-process.on('uncaughtException', e => console.error(e));
-
-client.login(process.env.TOKEN);
+client.login(process.env.TOKEN).catch(err => {
+    console.error('Login failed — check token:', err.message);
+    process.exit(1);
+});
