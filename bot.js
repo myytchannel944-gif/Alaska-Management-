@@ -135,16 +135,30 @@ client.on('interactionCreate', async interaction => {
                 }
 
                 const embed = new EmbedBuilder()
-                    .setAuthor({ name: "ALASKA STATE ROLEPLAY • OFFICIAL DIRECTORY", iconURL: ASSETS.DASHBOARD_ICON })
-                    .setTitle("Dashboard")
+                    .setAuthor({ 
+                        name: "ALASKA STATE ROLEPLAY • OFFICIAL DIRECTORY", 
+                        iconURL: ASSETS.DASHBOARD_ICON 
+                    })
+                    .setTitle("Welcome to the ASRP Dashboard")
                     .setDescription(
-                        "**Welcome to Alaska State RolePlay!**\n\n" +
-                        "The best ER:LC roleplay community.\n\n" +
-                        "Read the rules and understand the application process.\n" +
-                        "Use the menu below."
+                        "**This is your central hub for everything Alaska State RolePlay!**\n\n" +
+
+                        "Whether you're a new member, a returning player, or just checking things out — " +
+                        "this dashboard gives you quick access to the most important community information.\n\n" +
+
+                        "Use the dropdown menu below to explore:\n" +
+                        "• **Staff Applications** — Want to join the team? Check requirements & apply here\n" +
+                        "• **In-Game Rules** — Essential guidelines for serious roleplay on the server\n" +
+                        "• **Discord Rules** — Our community standards & expectations on this server\n\n" +
+
+                        "We recommend **every member** reads through these sections at least once.\n" +
+                        "Following the rules helps keep our community respectful, fun, and drama-free.\n\n" +
+
+                        "Ready to dive in? Select an option below ↓"
                     )
                     .setColor(COLORS.PRIMARY)
                     .setImage(ASSETS.DASHBOARD_ICON)
+                    .setFooter({ text: "Alaska State RolePlay • Serious ER:LC Roleplay Community" })
                     .setTimestamp();
 
                 const menu = new StringSelectMenuBuilder()
@@ -207,12 +221,9 @@ client.on('interactionCreate', async interaction => {
                         title: "📋 Staff Applications",
                         content:
                             "**Join the Alaska State RolePlay Staff Team**\n\n" +
-                            "We are currently **accepting applications** for motivated and reliable members.\n\n" +
+                            "**Staff Applications are OPEN** 🟢\n\n" +
 
-                            "🛡️ **Application Status**\n" +
-                            "• General Staff     → **OPEN**\n" +
-                            "• Internal Affairs  → **CLOSED**\n" +
-                            "• Management        → **CLOSED**\n\n" +
+                            "We are currently accepting applications for motivated and reliable members.\n\n" +
 
                             "📌 **What we’re looking for**\n" +
                             "• Maturity & professionalism\n" +
