@@ -15,6 +15,7 @@ const client = new Client({
 // ─── Constants ──────────────────────────────────────────────────
 const BOT_COLOR = "#2f3136"; 
 const SUPPORT_BANNER = "https://image2url.com/r2/default/images/1771467061096-fc09db59-fd9e-461f-ba30-c8b1ee42ff1f.jpg";
+const TICKET_ROLE_ID = "1474234032677060795"; // The role to add/remove
 const CONFIG_PATH = './config.json';
 
 let config = (() => {
@@ -32,7 +33,7 @@ client.on('interactionCreate', async (int) => {
     if (!int.guild || int.user.bot) return;
 
     try {
-        // 1. TICKET CREATION (Selection Menu)
+        // 1. TICKET CREATION
         if (int.isStringSelectMenu() && int.customId === 'ticket_type') {
             await int.deferReply({ ephemeral: true });
             if (!config.staffRole) return int.editReply("⚠️ Bot not configured. Run `/setup`.");
@@ -41,6 +42,13 @@ client.on('interactionCreate', async (int) => {
             let pingRole = config.staffRole; 
             if (dept === 'internal-affairs') pingRole = config.iaRole;
             if (dept === 'management') pingRole = config.mgmtRole;
+
+            // --- ADD TICKET ROLE ---
+            try {
+                await int.member.roles.add(TICKET_ROLE_ID);
+            } catch (e) {
+                console.error("Failed to add role. Check bot permissions hierarchy.");
+            }
 
             const channel = await int.guild.channels.create({
                 name: `${dept}-${int.user.username}`,
@@ -52,7 +60,6 @@ client.on('interactionCreate', async (int) => {
                 ]
             });
 
-            // Store data for duration tracking and logs
             ticketData.set(channel.id, { openerId: int.user.id, startTime: Date.now(), claimedBy: null });
 
             const row = new ActionRowBuilder().addComponents(
@@ -77,7 +84,7 @@ client.on('interactionCreate', async (int) => {
         // 2. CLAIM SYSTEM
         if (int.isButton() && int.customId === 'claim_ticket') {
             const data = ticketData.get(int.channel.id);
-            if (data?.claimedBy) return int.reply({ content: "⚠️ This ticket is already claimed.", ephemeral: true });
+            if (data?.claimedBy) return int.reply({ content: "⚠️ Already claimed.", ephemeral: true });
 
             data.claimedBy = int.user.id;
             ticketData.set(int.channel.id, data);
@@ -92,12 +99,22 @@ client.on('interactionCreate', async (int) => {
             await int.message.edit({ components: [newRow] });
         }
 
-        // 3. CLOSE & DETAILED LOGS
+        // 3. CLOSE & REMOVE ROLE
         if (int.isButton() && int.customId === 'close_ticket') {
             const data = ticketData.get(int.channel.id) || { openerId: "Unknown", startTime: Date.now(), claimedBy: null };
-            await int.reply("📑 **Generating logs and closing channel...**");
+            await int.reply("📑 **Processing logs and closing...**");
 
-            // Calculate duration
+            // --- REMOVE TICKET ROLE ---
+            if (data.openerId !== "Unknown") {
+                try {
+                    const member = await int.guild.members.fetch(data.openerId).catch(() => null);
+                    if (member) await member.roles.remove(TICKET_ROLE_ID);
+                } catch (e) {
+                    console.error("Failed to remove role.");
+                }
+            }
+
+            // Duration calculation
             const durationMs = Date.now() - data.startTime;
             const mins = Math.floor(durationMs / 60000);
             const secs = ((durationMs % 60000) / 1000).toFixed(0);
@@ -114,8 +131,7 @@ client.on('interactionCreate', async (int) => {
                         { name: "Opener", value: `<@${data.openerId}>`, inline: true },
                         { name: "Claimed By", value: data.claimedBy ? `<@${data.claimedBy}>` : "Unclaimed", inline: true },
                         { name: "Closed By", value: `${int.user}`, inline: true },
-                        { name: "Duration", value: `\`${mins}m ${secs}s\``, inline: true },
-                        { name: "Channel", value: `\`${int.channel.name}\``, inline: true }
+                        { name: "Duration", value: `\`${mins}m ${secs}s\``, inline: true }
                     ).setTimestamp();
 
                 const buffer = Buffer.from(transcript, 'utf-8');
@@ -126,16 +142,11 @@ client.on('interactionCreate', async (int) => {
             setTimeout(() => int.channel.delete().catch(() => {}), 5000);
         }
 
-        // 4. SETUP (Matches image style)
+        // 4. SETUP
         if (int.isChatInputCommand() && int.commandName === 'setup') {
             if (!int.member.permissions.has(PermissionsBitField.Flags.Administrator)) return int.reply({ content: "🚫 Admin only.", ephemeral: true });
 
-            config = { 
-                logChannel: int.options.getChannel('logs').id, 
-                staffRole: int.options.getRole('staff').id, 
-                iaRole: int.options.getRole('ia_role').id, 
-                mgmtRole: int.options.getRole('management_role').id 
-            };
+            config = { logChannel: int.options.getChannel('logs').id, staffRole: int.options.getRole('staff').id, iaRole: int.options.getRole('ia_role').id, mgmtRole: int.options.getRole('management_role').id };
             saveConfig();
 
             const menu = new StringSelectMenuBuilder().setCustomId('ticket_type').setPlaceholder('Select Department...')
@@ -148,31 +159,20 @@ client.on('interactionCreate', async (int) => {
             const panelEmbed = new EmbedBuilder()
                 .setTitle('🏛️ Alaska Support & Relations')
                 .setColor(BOT_COLOR)
-                .setDescription(
-                    'Select a category below to initiate a private session.\n\n' +
-                    '🔹 **General Support**\nServer help and partnerships.\n\n' +
-                    '🔹 **Internal Affairs**\nStaff misconduct reports.\n\n' +
-                    '🔹 **Management**\nExecutive appeals and perk claims.'
-                )
+                .setDescription('Select a category below to initiate a private session.\n\n🔹 **General Support**\nServer help and partnerships.\n\n🔹 **Internal Affairs**\nStaff misconduct reports.\n\n🔹 **Management**\nExecutive appeals and perk claims.')
                 .setImage(SUPPORT_BANNER);
 
             await int.channel.send({ embeds: [panelEmbed], components: [new ActionRowBuilder().addComponents(menu)] });
-            return int.reply({ content: "✅ Ticket Panel deployed.", ephemeral: true });
+            return int.reply({ content: "✅ Deployed.", ephemeral: true });
         }
     } catch (e) { console.error(e); }
 });
 
 client.once('ready', async () => {
-    const commands = [
-        new SlashCommandBuilder().setName('setup').setDescription('Deploy ticket panel')
-            .addChannelOption(o => o.setName('logs').setDescription('Log channel').setRequired(true))
-            .addRoleOption(o => o.setName('staff').setDescription('General Staff').setRequired(true))
-            .addRoleOption(o => o.setName('ia_role').setDescription('Internal Affairs').setRequired(true))
-            .addRoleOption(o => o.setName('management_role').setDescription('Management').setRequired(true))
-    ];
+    const commands = [new SlashCommandBuilder().setName('setup').setDescription('Deploy ticket panel').addChannelOption(o => o.setName('logs').setDescription('Logs').setRequired(true)).addRoleOption(o => o.setName('staff').setDescription('Staff').setRequired(true)).addRoleOption(o => o.setName('ia_role').setDescription('IA').setRequired(true)).addRoleOption(o => o.setName('management_role').setDescription('Mgmt').setRequired(true))];
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log(`✅ Alaska Online.`);
+    console.log(`✅ Alaska Executive Online.`);
 });
 
 client.login(process.env.TOKEN);
