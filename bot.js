@@ -51,16 +51,20 @@ async function loadConfig() {
     try {
         const data = await fs.readFile(CONFIG_PATH, 'utf-8');
         config = { ...DEFAULT_CONFIG, ...JSON.parse(data) };
+        console.log('[CONFIG] Loaded successfully');
     } catch (err) {
-        if (err.code !== 'ENOENT') console.error('Config load error:', err);
+        if (err.code !== 'ENOENT') {
+            console.error('[CONFIG] Load error:', err);
+        }
     }
 }
 
 async function saveConfig() {
     try {
         await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+        console.log('[CONFIG] Saved successfully');
     } catch (err) {
-        console.error('Failed to save config:', err);
+        console.error('[CONFIG] Save failed:', err);
     }
 }
 
@@ -83,7 +87,7 @@ const TICKET_ROLE_ID = "1474234032677060795";
 const ticketData = new Map();
 
 // ────────────────────────────────────────────────
-// Helper Functions
+// Helpers
 // ────────────────────────────────────────────────
 
 function getPingRoleId(department) {
@@ -127,12 +131,23 @@ function createControlButtons(claimed = false) {
 // ────────────────────────────────────────────────
 
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isDiscord() || interaction.user.bot) return;
+    if (!interaction.guild || interaction.user.bot) return;
+
+    // ─────────────── DEBUG LINE ───────────────
+    console.log(
+        `[DEBUG] Interaction received! ` +
+        `Type: ${interaction.type} | ` +
+        `ID: ${interaction.commandName || interaction.customId || 'none'} | ` +
+        `User: ${interaction.user.tag} (${interaction.user.id}) | ` +
+        `Guild: ${interaction.guild.name} (${interaction.guild.id}) | ` +
+        `Channel: ${interaction.channel?.name || 'unknown'}`
+    );
 
     try {
-        // ── Slash Commands ────────────────────────────────
+        // Slash Commands
         if (interaction.isChatInputCommand()) {
-            // Dashboard
+            console.log(`[CMD] Processing slash command: /${interaction.commandName}`);
+
             if (interaction.commandName === 'dashboard') {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
                     return interaction.reply({ content: "Only administrators can deploy the dashboard.", ephemeral: true });
@@ -179,7 +194,6 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply({ content: "Dashboard panel deployed successfully.", ephemeral: true });
             }
 
-            // Setup
             if (interaction.commandName === 'setup') {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
                     return interaction.reply({ content: "Only administrators can run setup.", ephemeral: true });
@@ -216,8 +230,10 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // ── Select Menus ──────────────────────────────────
+        // String Select Menus
         if (interaction.isStringSelectMenu()) {
+            console.log(`[MENU] Processing select menu: ${interaction.customId}`);
+
             if (interaction.customId === 'asrp_dashboard') {
                 const pages = {
                     staff_apps: {
@@ -225,24 +241,19 @@ client.on('interactionCreate', async interaction => {
                         content:
                             "**Join the Alaska State RolePlay Staff Team**\n\n" +
                             "**Staff Applications are OPEN** 🟢\n\n" +
-
                             "We are currently accepting applications for motivated and reliable members.\n\n" +
-
                             "📌 **What we’re looking for**\n" +
                             "• Maturity & professionalism\n" +
                             "• Strong understanding of roleplay rules\n" +
                             "• Active participation in the community\n" +
                             "• Good communication skills\n" +
                             "• Ability to stay calm in difficult situations\n\n" +
-
                             "🔗 **Apply Here**\n" +
                             "[Staff Application Form](https://melonly.xyz/forms/7429303261795979264)\n\n" +
-
                             "📩 **Next steps**\n" +
                             "→ You’ll receive a confirmation DM after submitting\n" +
                             "→ Decisions & updates posted in #📋┃application-results\n" +
                             "→ Typical response time: within 24 hours\n\n" +
-
                             "⚠️ **Please note**\n" +
                             "Only apply if you are serious and can commit time. Duplicate or low-effort applications will be denied.",
                     },
@@ -276,6 +287,7 @@ client.on('interactionCreate', async interaction => {
                 const page = pages[selected];
 
                 if (!page) {
+                    console.log('[MENU] Invalid selection:', selected);
                     return interaction.reply({ content: "Invalid selection.", ephemeral: true });
                 }
 
@@ -290,120 +302,150 @@ client.on('interactionCreate', async interaction => {
             }
 
             if (interaction.customId === 'ticket_type') {
-                await interaction.deferReply({ ephemeral: true });
+                console.log('[TICKET] Starting ticket creation flow');
 
-                if (!config.staffRole) {
-                    return interaction.editReply("⚠️  Bot not fully configured. Please run `/setup` first.");
+                await interaction.deferReply({ ephemeral: true }).catch(err => {
+                    console.error('[TICKET] Defer failed:', err.message);
+                });
+
+                try {
+                    if (!config.staffRole) {
+                        console.log('[TICKET] Missing staffRole config');
+                        return interaction.editReply("⚠️ Bot not configured. Run `/setup` first.");
+                    }
+
+                    const department = interaction.values[0];
+                    const pingRoleId = getPingRoleId(department);
+
+                    if (!pingRoleId) {
+                        console.log('[TICKET] No ping role for department:', department);
+                        return interaction.editReply("⚠️ Missing role configuration for this department.");
+                    }
+
+                    await interaction.member.roles.add(TICKET_ROLE_ID).catch(err => {
+                        console.warn('[TICKET] Role add failed (non-critical):', err.message);
+                    });
+
+                    const name = `${department}-${interaction.user.username}`
+                        .toLowerCase()
+                        .replace(/[^a-z0-9-]/g, '')
+                        .slice(0, 100);
+
+                    console.log('[TICKET] Creating channel:', name);
+
+                    const ticketChannel = await interaction.guild.channels.create({
+                        name,
+                        type: ChannelType.GuildText,
+                        permissionOverwrites: [
+                            { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                            { id: interaction.user.id,   allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                            { id: pingRoleId,            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                        ],
+                    });
+
+                    ticketData.set(ticketChannel.id, {
+                        openerId: interaction.user.id,
+                        startTime: Date.now(),
+                        claimedBy: null,
+                        department,
+                    });
+
+                    await ticketChannel.send({
+                        content: `${interaction.user} | <@&${pingRoleId}>`,
+                        embeds: [createTicketEmbed(department)],
+                        components: [createControlButtons()],
+                    });
+
+                    await interaction.editReply(`✅ Ticket created: ${ticketChannel}`);
+
+                    console.log('[TICKET] Success →', ticketChannel.name);
+
+                } catch (err) {
+                    console.error('[TICKET] Creation failed:', err);
+                    await interaction.editReply("❌ Failed to create ticket. Contact an admin.").catch(() => {});
                 }
-
-                const department = interaction.values[0];
-                const pingRoleId = getPingRoleId(department);
-
-                if (!pingRoleId) {
-                    return interaction.editReply("⚠️  Missing role configuration for this department.");
-                }
-
-                await interaction.member.roles.add(TICKET_ROLE_ID).catch(() => {});
-
-                const name = `${department}-${interaction.user.username}`
-                    .toLowerCase()
-                    .replace(/[^a-z0-9-]/g, '')
-                    .slice(0, 100);
-
-                const ticketChannel = await interaction.guild.channels.create({
-                    name,
-                    type: ChannelType.GuildText,
-                    permissionOverwrites: [
-                        { id: interaction.guild.id,               deny: [PermissionsBitField.Flags.ViewChannel] },
-                        { id: interaction.user.id,                 allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                        { id: pingRoleId,                          allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                    ],
-                }).catch(err => {
-                    console.error('Channel creation failed:', err);
-                    throw err;
-                });
-
-                ticketData.set(ticketChannel.id, {
-                    openerId: interaction.user.id,
-                    startTime: Date.now(),
-                    claimedBy: null,
-                    department,
-                });
-
-                await ticketChannel.send({
-                    content: `${interaction.user} | <@&${pingRoleId}>`,
-                    embeds: [createTicketEmbed(department)],
-                    components: [createControlButtons()],
-                });
-
-                await interaction.editReply(`✅ Ticket created: ${ticketChannel}`);
             }
         }
 
-        // ── Buttons ───────────────────────────────────────
+        // Buttons
         if (interaction.isButton()) {
+            console.log('[BUTTON] Processing button:', interaction.customId);
+
             const data = ticketData.get(interaction.channel?.id);
-            if (!data) return;
+            if (!data) {
+                console.log('[BUTTON] No ticket data found for channel');
+                return;
+            }
 
             await interaction.deferUpdate().catch(() => {});
 
-            if (interaction.customId === 'claim_ticket') {
-                if (data.claimedBy) {
-                    return interaction.editReply({ content: "This ticket is already claimed." }).catch(() => {});
-                }
-
-                data.claimedBy = interaction.user.id;
-
-                await interaction.editReply({
-                    embeds: [new EmbedBuilder()
-                        .setColor(COLORS.SUCCESS)
-                        .setDescription(`✅ Ticket claimed by ${interaction.user}`)],
-                    components: [createControlButtons(true)],
-                });
-            }
-
-            if (interaction.customId === 'close_ticket') {
-                await interaction.editReply("📑 Closing ticket...").catch(() => {});
-
-                const member = await interaction.guild.members.fetch(data.openerId).catch(() => null);
-                if (member) await member.roles.remove(TICKET_ROLE_ID).catch(() => {});
-
-                if (config.logChannel) {
-                    const logChannel = interaction.guild.channels.cache.get(config.logChannel);
-                    if (logChannel?.isTextBased()) {
-                        const duration = Math.floor((Date.now() - data.startTime) / 60000);
-                        const logEmbed = new EmbedBuilder()
-                            .setTitle("📁 Ticket Closed")
-                            .setColor(COLORS.DANGER)
-                            .addFields(
-                                { name: "Opener",     value: `<@${data.openerId}>`, inline: true },
-                                { name: "Closed by",  value: `${interaction.user}`, inline: true },
-                                { name: "Duration",   value: `${duration} min`,     inline: true },
-                            )
-                            .setTimestamp()
-                            .setFooter({ text: "Alaska State RolePlay • Ticket System" });
-
-                        await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+            try {
+                if (interaction.customId === 'claim_ticket') {
+                    if (data.claimedBy) {
+                        return interaction.editReply({ content: "This ticket is already claimed." }).catch(() => {});
                     }
+
+                    data.claimedBy = interaction.user.id;
+
+                    await interaction.editReply({
+                        embeds: [new EmbedBuilder()
+                            .setColor(COLORS.SUCCESS)
+                            .setDescription(`✅ Ticket claimed by ${interaction.user}`)],
+                        components: [createControlButtons(true)],
+                    });
                 }
 
-                ticketData.delete(interaction.channel.id);
-                setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
+                if (interaction.customId === 'close_ticket') {
+                    await interaction.editReply("📑 Closing ticket...").catch(() => {});
+
+                    const member = await interaction.guild.members.fetch(data.openerId).catch(() => null);
+                    if (member) await member.roles.remove(TICKET_ROLE_ID).catch(() => {});
+
+                    if (config.logChannel) {
+                        const logChannel = interaction.guild.channels.cache.get(config.logChannel);
+                        if (logChannel?.isTextBased()) {
+                            const duration = Math.floor((Date.now() - data.startTime) / 60000);
+                            const logEmbed = new EmbedBuilder()
+                                .setTitle("📁 Ticket Closed")
+                                .setColor(COLORS.DANGER)
+                                .addFields(
+                                    { name: "Opener",     value: `<@${data.openerId}>`, inline: true },
+                                    { name: "Closed by",  value: `${interaction.user}`, inline: true },
+                                    { name: "Duration",   value: `${duration} min`,     inline: true },
+                                )
+                                .setTimestamp()
+                                .setFooter({ text: "Alaska State RolePlay • Ticket System" });
+
+                            await logChannel.send({ embeds: [logEmbed] }).catch(err => {
+                                console.error('[LOG] Failed to send log embed:', err.message);
+                            });
+                        }
+                    }
+
+                    ticketData.delete(interaction.channel.id);
+                    setTimeout(() => interaction.channel.delete().catch(err => {
+                        console.error('[CLOSE] Channel delete failed:', err.message);
+                    }), 3000);
+                }
+            } catch (err) {
+                console.error('[BUTTON] Error:', err);
             }
         }
     } catch (err) {
-        console.error('Interaction error:', err);
+        console.error('[INTERACTION] Top-level error:', err);
         if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: "An error occurred while processing your request.", ephemeral: true }).catch(() => {});
+            await interaction.reply({ content: "An internal error occurred.", ephemeral: true }).catch(() => {});
         }
     }
 });
 
 // ────────────────────────────────────────────────
-// Bot Startup
+// Startup
 // ────────────────────────────────────────────────
 
 client.once('ready', async () => {
+    console.log(`[READY] Logged in as ${client.user.tag} (${client.user.id})`);
+
     await loadConfig();
 
     const commands = [
@@ -423,17 +465,23 @@ client.once('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
     try {
-        console.log(`Registering ${commands.length} guild commands...`);
+        console.log(`[CMD] Registering ${commands.length} guild commands in guild 1472277307002589216`);
+
         await rest.put(
             Routes.applicationGuildCommands(client.user.id, '1472277307002589216'),
             { body: commands },
         );
-        console.log('Guild commands registered successfully');
+
+        console.log('[CMD] Guild commands registered successfully');
+        console.log('[CMD] Commands should appear within 10–60 seconds');
     } catch (err) {
-        console.error('Command registration failed:', err);
+        console.error('[CMD REGISTER ERROR]', err);
+        if (err.code) {
+            console.log(`Error code: ${err.code} | Message: ${err.message || 'No message'}`);
+        }
     }
 
-    console.log(`✅ ${client.user.tag} is online and ready`);
+    console.log('[READY] Bot is fully online and ready');
 });
 
 client.login(process.env.TOKEN);
