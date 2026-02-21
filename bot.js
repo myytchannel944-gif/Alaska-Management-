@@ -372,7 +372,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: `✅ Sent in ${targetChannel}.`, ephemeral: true });
         }
 
-        // 5. EMBED BUILDER (new command)
+        // 5. EMBED BUILDER
         if (interaction.isChatInputCommand() && interaction.commandName === 'embedbuilder') {
             if (!isBotOwner(interaction)) {
                 return interaction.reply({ content: "🚫 Owner-only command.", ephemeral: true });
@@ -415,8 +415,7 @@ client.on('interactionCreate', async (interaction) => {
             } catch (buildError) {
                 console.error('Embed build/send error:', buildError);
                 return interaction.editReply({
-                    content: "❌ Failed to build/send embed.\n" +
-                             "Possible issues: missing description, invalid color/URL, too many fields, etc."
+                    content: "❌ Failed to build/send embed.\nPossible issues: missing description, invalid color/URL, too many fields, etc."
                 });
             }
         }
@@ -719,13 +718,18 @@ client.once('ready', async () => {
 
     try {
         const guildId = process.env.GUILD_ID;
-        if (guildId) {
-            await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commands });
-            console.log(`Guild commands registered`);
-        } else {
-            await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-            console.log('Global commands registered');
+        if (!guildId) {
+            console.log("⚠️ GUILD_ID not set in .env → no commands registered");
+            return;
         }
+
+        // Register ONLY in the specified guild (prevents global duplicates)
+        await rest.put(
+            Routes.applicationGuildCommands(client.user.id, guildId),
+            { body: commands }
+        );
+
+        console.log(`✅ Registered ${commands.length} guild-specific commands in ${guildId}`);
     } catch (err) {
         console.error('Command registration failed:', err);
     }
