@@ -323,7 +323,31 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: "✅ Departments dashboard deployed.", flags: MessageFlags.Ephemeral });
         }
 
-        // 3. TICKET STATS
+        // 3. DEPARTMENT DROPDOWN HANDLER (prevents "interaction failed")
+        if (interaction.isStringSelectMenu() && interaction.customId === 'select_department') {
+            const value = interaction.values[0];
+
+            let replyText = 'Unknown department selected.';
+
+            switch (value) {
+                case 'ast':
+                    replyText = '✅ **Alaska State Troopers** is **OPEN**!\nJoin here: https://discord.gg/your-ast-invite-link';
+                    break;
+                case 'dot':
+                    replyText = '✅ **Alaska Department of Transportation** is **OPEN**!\nJoin here: https://discord.gg/your-dot-invite-link';
+                    break;
+                case 'apd':
+                    replyText = '🔴 **Alaska Police Department** is currently **CLOSED** / in development.';
+                    break;
+                case 'afd':
+                    replyText = '🔴 **Alaska Fire Department** is currently **CLOSED** / in development.';
+                    break;
+            }
+
+            return interaction.reply({ content: replyText, flags: MessageFlags.Ephemeral });
+        }
+
+        // 4. TICKET STATS
         if (interaction.isChatInputCommand() && interaction.commandName === 'ticketstats') {
             try {
                 const openTickets = Array.from(ticketData.values());
@@ -363,7 +387,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 4. OWNER PANEL
+        // 5. OWNER PANEL
         if (interaction.isChatInputCommand() && interaction.commandName === 'ownerpanel') {
             const code = interaction.options.getString('code', true);
             if (code !== OWNER_PANEL_CODE) {
@@ -411,7 +435,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 5. SAY COMMAND
+        // 6. SAY COMMAND
         if (interaction.isChatInputCommand() && interaction.commandName === 'say') {
             const message = interaction.options.getString('message', true);
             const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
@@ -424,7 +448,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: `✅ Sent in ${targetChannel}.`, flags: MessageFlags.Ephemeral });
         }
 
-        // 6. EMBED BUILDER
+        // 7. EMBED BUILDER
         if (interaction.isChatInputCommand() && interaction.commandName === 'embedbuilder') {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -470,7 +494,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 7. SETUP COMMAND
+        // 8. SETUP COMMAND
         if (interaction.isChatInputCommand() && interaction.commandName === 'setup') {
             const logs = interaction.options.getChannel('logs');
             const staff = interaction.options.getRole('staff');
@@ -498,7 +522,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ embeds: [setupEmbed], flags: MessageFlags.Ephemeral });
         }
 
-        // 8. TICKET PERSON ADD
+        // 9. TICKET PERSON ADD
         if (interaction.isChatInputCommand() && interaction.commandName === 'ticketpersonadd') {
             const channel = interaction.channel;
             const data = ticketData.get(channel.id);
@@ -528,7 +552,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 9. TICKET PERSON REMOVE
+        // 10. TICKET PERSON REMOVE
         if (interaction.isChatInputCommand() && interaction.commandName === 'ticketpersonremove') {
             const channel = interaction.channel;
             const data = ticketData.get(channel.id);
@@ -554,7 +578,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 10. DASHBOARD MENU RESPONSES
+        // 11. DASHBOARD MENU RESPONSES
         if (interaction.isStringSelectMenu() && interaction.customId === 'asrp_dashboard') {
             const responses = {
                 staff_apps: {
@@ -611,7 +635,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }
 
-        // 11. TICKET CREATION
+        // 12. TICKET CREATION
         if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_type') {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -689,7 +713,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.editReply({ content: `✅ Ticket created → ${channel}`, flags: MessageFlags.Ephemeral });
         }
 
-        // 12. TICKET BUTTONS
+        // 13. TICKET BUTTONS
         if (interaction.isButton()) {
             const channel = interaction.channel;
             const data = ticketData.get(channel.id);
@@ -861,63 +885,6 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.reply({ content: "Failed to remove user. Check bot permissions.", flags: MessageFlags.Ephemeral });
             }
         }
-
-        // Dashboard menu responses (no restriction since it's not a command)
-        if (interaction.isStringSelectMenu() && interaction.customId === 'asrp_dashboard') {
-            const responses = {
-                staff_apps: {
-                    title: "📝 Staff Applications",
-                    desc: "**Staff Team Applications**\n\n" +
-                          "**🟢 Status: OPENED 🟢**\n\n" +
-                          "We are currently accepting applications for:\n" +
-                          "• Staff Team (Moderators, Helpers, Administrators)\n\n" +
-                          "All applications are reviewed by management. Make sure you meet the requirements listed in #「🌸」·applications before applying.\n\n" +
-                          "🔗 **Apply here:** " + ASRP_APPLICATION_LINK + "\n\n" +
-                          "We look forward to potentially welcoming you to the team!"
-                },
-                ig_rules: {
-                    title: "🎮 In-Game Rules (ER:LC RP Standards)",
-                    desc: "**Alaska State RolePlay • In-Game Rules**\n\n" +
-                          "These rules are in place to maintain serious, high-quality roleplay in Emergency Response: Liberty County.\n\n" +
-                          "1. **Serious Roleplay Only**\n • No trolling, meme RP, fail RP, or unrealistic behavior.\n • All actions must be believable in a real-world emergency/civilian context.\n\n" +
-                          "2. **Fear & New Life Rule (NLR)**\n • Value your life realistically — do not act fearless when weapons are drawn.\n • After death, you forget previous events for **15 minutes** and cannot return to the scene or seek revenge.\n\n" +
-                          "3. **No RDM / VDM**\n • Random Deathmatch (killing without valid RP reason) = severe punishment.\n • Vehicle Deathmatch (running people over without RP) = same.\n\n" +
-                          "4. **No Powergaming / Metagaming**\n • No forcing actions on others without consent.\n • No using out-of-character (OOC) information in-character.\n\n" +
-                          "5. **No Exploits, Hacks, or Glitches**\n • Any form of cheating, bug abuse, or unfair advantage = permanent ban.\n\n" +
-                          "6. **Realistic Interactions & Pursuits**\n • Proper use of radios, handcuffs, sirens, etc.\n • No cop baiting, excessive reckless driving without RP reason.\n • Criminals must commit crimes with buildup — no random mass chaos.\n\n" +
-                          "7. **Department & Job Guidelines**\n • Follow chain of command and department protocols.\n • EMS must prioritize life-saving over arrests.\n • Police must have probable cause before searches/arrests.\n\n" +
-                          "Violations → Warning → Kick → Temporary Ban → Permanent Ban (depending on severity).\nStaff decisions are final."
-                },
-                dc_rules: {
-                    title: "📜 Discord Server Rules",
-                    desc: "**Alaska State RolePlay • Discord Rules**\n\n" +
-                          "Breaking any rule may result in warnings, mutes, kicks, or bans depending on severity.\n\n" +
-                          "1. **Respect & No Toxicity**\n • No harassment, slurs, hate speech, bullying, or targeted attacks.\n • Zero tolerance for discrimination (race, gender, sexuality, religion, etc.).\n\n" +
-                          "2. **No NSFW / Explicit Content**\n • No pornography, gore, suggestive images/text, or links.\n • Keep the server family-friendly (Roblox community).\n\n" +
-                          "3. **No Spam / Flooding**\n • No excessive emojis, copypasta, caps spam, mention spam, or zalgo.\n • Use channels for their intended purpose.\n\n" +
-                          "4. **No Advertising / Self-Promotion**\n • No unsolicited server invites, YouTube/TikTok/Instagram promo, or DM advertising.\n • Partnerships only through official management.\n\n" +
-                          "5. **No Unnecessary Pings / Staff Abuse**\n • Do not ping @Staff, @here, @everyone without valid emergency.\n • False ticket opens or pings = punishment.\n\n" +
-                          "6. **No Drama / Public Callouts**\n • Keep personal conflicts private — no public stirring or callouts.\n • Report issues to staff privately via tickets.\n\n" +
-                          "7. **No Impersonation**\n • Do not pretend to be staff, fake ranks, or use misleading nicknames.\n\n" +
-                          "8. **Follow Roblox & Discord ToS**\n • No ban evasion, doxxing, threats, illegal content, or sharing personal information.\n\n" +
-                          "9. **English in Public Channels**\n • Main language is English — other languages allowed in appropriate or private channels.\n\n" +
-                          "10. **Staff Instructions**\n • Follow directions from staff members.\n • Arguing with staff punishments may lead to further action.\n\n" +
-                          "Use #appeals or open a ticket if you believe a punishment was unfair."
-                }
-            };
-
-            const res = responses[interaction.values[0]];
-            if (!res) return interaction.reply({ content: "Invalid option.", flags: MessageFlags.Ephemeral });
-
-            const embed = new EmbedBuilder()
-                .setTitle(res.title)
-                .setDescription(res.desc)
-                .setColor(BOT_COLOR)
-                .setThumbnail(DASHBOARD_ICON)
-                .setFooter({ text: "Alaska State RolePlay • Follow the rules!" });
-
-            return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-        }
     } catch (err) {
         console.error('Interaction error:', err);
         if (!interaction.deferred && !interaction.replied) {
@@ -942,7 +909,7 @@ client.once('clientReady', async () => {
     const rest = new REST({ version: '10' }).setToken(TOKEN);
 
     const commands = [
-        new SlashCommandBuilder().setName('dashboard').setDescription('Deploy dashboard panel'),
+        new SlashCommandBuilder().setName('dashboard').setDescription('Deploy main dashboard panel'),
         new SlashCommandBuilder().setName('deptdashboard').setDescription('Deploy departments dashboard (Foundership only)'),
         new SlashCommandBuilder().setName('ticketstats').setDescription('View ticket stats (admin)'),
         new SlashCommandBuilder()
