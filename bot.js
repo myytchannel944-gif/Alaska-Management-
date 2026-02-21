@@ -16,6 +16,7 @@ const {
     REST,
     Routes,
     StringSelectMenuBuilder,
+    MessageFlags,
 } = require('discord.js');
 
 const client = new Client({
@@ -235,7 +236,7 @@ client.on('interactionCreate', async (interaction) => {
         // 1. DASHBOARD COMMAND
         if (interaction.isChatInputCommand() && interaction.commandName === 'dashboard') {
             if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return interaction.reply({ content: "🚫 Admin only.", ephemeral: true });
+                return interaction.reply({ content: "🚫 Admin only.", flags: MessageFlags.Ephemeral });
             }
 
             const embed = new EmbedBuilder()
@@ -267,13 +268,13 @@ client.on('interactionCreate', async (interaction) => {
                 components: [menuRow],
             });
 
-            return interaction.reply({ content: "✅ Dashboard deployed.", ephemeral: true });
+            return interaction.reply({ content: "✅ Dashboard deployed.", flags: MessageFlags.Ephemeral });
         }
 
         // 2. TICKET STATS — FIXED VERSION
         if (interaction.isChatInputCommand() && interaction.commandName === 'ticketstats') {
             if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return interaction.reply({ content: "🚫 Admin only.", ephemeral: true });
+                return interaction.reply({ content: "🚫 Admin only.", flags: MessageFlags.Ephemeral });
             }
 
             try {
@@ -298,18 +299,18 @@ client.on('interactionCreate', async (interaction) => {
                     .setDescription('Current ticket queue and response status.')
                     .addFields(
                         { name: 'Open Tickets', value: `${openTickets.length}`, inline: true },
-                        { name: 'Claimed',      value: `${claimedCount}`,      inline: true },
-                        { name: 'Unclaimed',    value: `${unclaimedCount}`,    inline: true },
+                        { name: 'Claimed', value: `${claimedCount}`, inline: true },
+                        { name: 'Unclaimed', value: `${unclaimedCount}`, inline: true },
                         { name: 'By Department', value: deptLines, inline: false }
                     )
                     .setTimestamp();
 
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+                return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
             } catch (statsErr) {
                 console.error('Ticketstats command failed:', statsErr);
                 return interaction.reply({ 
                     content: "❌ Failed to load ticket stats. Check bot logs for details.", 
-                    ephemeral: true 
+                    flags: MessageFlags.Ephemeral 
                 });
             }
         }
@@ -317,12 +318,12 @@ client.on('interactionCreate', async (interaction) => {
         // 3. OWNER PANEL (text or embed editing)
         if (interaction.isChatInputCommand() && interaction.commandName === 'ownerpanel') {
             if (!isBotOwner(interaction)) {
-                return interaction.reply({ content: "🚫 Owner-only command.", ephemeral: true });
+                return interaction.reply({ content: "🚫 Owner-only command.", flags: MessageFlags.Ephemeral });
             }
 
             const code = interaction.options.getString('code', true);
             if (code !== OWNER_PANEL_CODE) {
-                return interaction.reply({ content: "🚫 Invalid owner code.", ephemeral: true });
+                return interaction.reply({ content: "🚫 Invalid owner code.", flags: MessageFlags.Ephemeral });
             }
 
             const messageId = interaction.options.getString('message_id', true);
@@ -331,19 +332,19 @@ client.on('interactionCreate', async (interaction) => {
             const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
 
             if (targetChannel?.type !== ChannelType.GuildText) {
-                return interaction.reply({ content: "⚠️ Must be a text channel.", ephemeral: true });
+                return interaction.reply({ content: "⚠️ Must be a text channel.", flags: MessageFlags.Ephemeral });
             }
 
             const message = await targetChannel.messages.fetch(messageId).catch(() => null);
-            if (!message) return interaction.reply({ content: "⚠️ Message not found.", ephemeral: true });
+            if (!message) return interaction.reply({ content: "⚠️ Message not found.", flags: MessageFlags.Ephemeral });
             if (message.author.id !== client.user.id) {
-                return interaction.reply({ content: "⚠️ Can only edit bot messages.", ephemeral: true });
+                return interaction.reply({ content: "⚠️ Can only edit bot messages.", flags: MessageFlags.Ephemeral });
             }
 
             try {
                 if (editType === 'text') {
                     await message.edit({ content: newContent, embeds: [] });
-                    return interaction.reply({ content: `✅ Text updated → ${message.url}`, ephemeral: true });
+                    return interaction.reply({ content: `✅ Text updated → ${message.url}`, flags: MessageFlags.Ephemeral });
                 }
 
                 if (editType === 'embed') {
@@ -353,40 +354,40 @@ client.on('interactionCreate', async (interaction) => {
                     } catch {
                         return interaction.reply({
                             content: "❌ Invalid embed JSON.\nExample:\n```json\n{\"title\":\"Title\",\"description\":\"Desc\",\"color\":3447003}\n```",
-                            ephemeral: true
+                            flags: MessageFlags.Ephemeral
                         });
                     }
                     const newEmbed = new EmbedBuilder(embedData);
                     await message.edit({ content: null, embeds: [newEmbed] });
-                    return interaction.reply({ content: `✅ Embed updated → ${message.url}`, ephemeral: true });
+                    return interaction.reply({ content: `✅ Embed updated → ${message.url}`, flags: MessageFlags.Ephemeral });
                 }
             } catch (err) {
                 console.error('Edit failed:', err);
-                return interaction.reply({ content: "❌ Edit failed (check JSON / permissions).", ephemeral: true });
+                return interaction.reply({ content: "❌ Edit failed (check JSON / permissions).", flags: MessageFlags.Ephemeral });
             }
         }
 
         // 4. SAY COMMAND
         if (interaction.isChatInputCommand() && interaction.commandName === 'say') {
             if (!isBotOwner(interaction)) {
-                return interaction.reply({ content: "🚫 Owner-only command.", ephemeral: true });
+                return interaction.reply({ content: "🚫 Owner-only command.", flags: MessageFlags.Ephemeral });
             }
 
             const message = interaction.options.getString('message', true);
             const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
 
             if (targetChannel?.type !== ChannelType.GuildText) {
-                return interaction.reply({ content: "⚠️ Must be a text channel.", ephemeral: true });
+                return interaction.reply({ content: "⚠️ Must be a text channel.", flags: MessageFlags.Ephemeral });
             }
 
             await targetChannel.send({ content: message });
-            return interaction.reply({ content: `✅ Sent in ${targetChannel}.`, ephemeral: true });
+            return interaction.reply({ content: `✅ Sent in ${targetChannel}.`, flags: MessageFlags.Ephemeral });
         }
 
         // 5. EMBED BUILDER
         if (interaction.isChatInputCommand() && interaction.commandName === 'embedbuilder') {
             if (!isBotOwner(interaction)) {
-                return interaction.reply({ content: "🚫 Owner-only command.", ephemeral: true });
+                return interaction.reply({ content: "🚫 Owner-only command.", flags: MessageFlags.Ephemeral });
             }
 
             await interaction.deferReply({ ephemeral: true });
@@ -395,7 +396,7 @@ client.on('interactionCreate', async (interaction) => {
             const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
 
             if (targetChannel.type !== ChannelType.GuildText) {
-                return interaction.editReply({ content: "⚠️ Target must be a text channel." });
+                return interaction.editReply({ content: "⚠️ Target must be a text channel.", flags: MessageFlags.Ephemeral });
             }
 
             let embedData;
@@ -415,18 +416,20 @@ client.on('interactionCreate', async (interaction) => {
                              "  \"footer\": { \"text\": \"Footer text\" },\n" +
                              "  \"thumbnail\": { \"url\": \"https://example.com/thumb.png\" },\n" +
                              "  \"image\": { \"url\": \"https://example.com/image.png\" }\n" +
-                             "}\n```"
+                             "}\n```",
+                    flags: MessageFlags.Ephemeral
                 });
             }
 
             try {
                 const embed = new EmbedBuilder(embedData);
                 await targetChannel.send({ embeds: [embed] });
-                return interaction.editReply({ content: `✅ Embed sent to ${targetChannel}` });
+                return interaction.editReply({ content: `✅ Embed sent to ${targetChannel}`, flags: MessageFlags.Ephemeral });
             } catch (buildError) {
                 console.error('Embed build/send error:', buildError);
                 return interaction.editReply({
-                    content: "❌ Failed to build/send embed.\nPossible issues: missing description, invalid color/URL, too many fields, etc."
+                    content: "❌ Failed to build/send embed.\nPossible issues: missing description, invalid color/URL, too many fields, etc.",
+                    flags: MessageFlags.Ephemeral
                 });
             }
         }
@@ -434,7 +437,7 @@ client.on('interactionCreate', async (interaction) => {
         // 6. SETUP COMMAND + panel
         if (interaction.isChatInputCommand() && interaction.commandName === 'setup') {
             if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return interaction.reply({ content: "🚫 Admin only.", ephemeral: true });
+                return interaction.reply({ content: "🚫 Admin only.", flags: MessageFlags.Ephemeral });
             }
 
             config.logChannel = interaction.options.getChannel('logs')?.id ?? config.logChannel;
@@ -484,7 +487,7 @@ client.on('interactionCreate', async (interaction) => {
                 components: [new ActionRowBuilder().addComponents(menu)],
             });
 
-            return interaction.reply({ content: "✅ Assistance panel deployed.", embeds: [setupEmbed], ephemeral: true });
+            return interaction.reply({ content: "✅ Assistance panel deployed.", embeds: [setupEmbed], flags: MessageFlags.Ephemeral });
         }
 
         // 7. DASHBOARD MENU RESPONSES
@@ -532,7 +535,7 @@ client.on('interactionCreate', async (interaction) => {
             };
 
             const res = responses[interaction.values[0]];
-            if (!res) return interaction.reply({ content: "Invalid option.", ephemeral: true });
+            if (!res) return interaction.reply({ content: "Invalid option.", flags: MessageFlags.Ephemeral });
 
             const embed = new EmbedBuilder()
                 .setTitle(res.title)
@@ -541,28 +544,28 @@ client.on('interactionCreate', async (interaction) => {
                 .setThumbnail(DASHBOARD_ICON)
                 .setFooter({ text: "Alaska State RolePlay • Follow the rules!" });
 
-            return interaction.reply({ embeds: [embed], ephemeral: true });
+            return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }
 
         // 8. TICKET CREATION
         if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_type') {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
             if (!config.staffRole || !config.iaRole || !config.mgmtRole) {
-                return interaction.editReply("⚠️ Run `/setup` first to configure roles.");
+                return interaction.editReply({ content: "⚠️ Run `/setup` first to configure roles.", flags: MessageFlags.Ephemeral });
             }
 
             const dept = interaction.values[0];
             const pingRoleId = getPingRole(dept);
-            if (!pingRoleId) return interaction.editReply("⚠️ Department role not set.");
+            if (!pingRoleId) return interaction.editReply({ content: "⚠️ Department role not set.", flags: MessageFlags.Ephemeral });
 
             const existing = findExistingTicket(interaction.guild, interaction.user.id);
-            if (existing) return interaction.editReply(`⚠️ You already have a ticket: <#${existing}>`);
+            if (existing) return interaction.editReply({ content: `⚠️ You already have a ticket: <#${existing}>`, flags: MessageFlags.Ephemeral });
 
             const lastOpen = userLastTicketOpen.get(interaction.user.id) || 0;
             const cooldownLeft = TICKET_COOLDOWN_MS - (Date.now() - lastOpen);
             if (cooldownLeft > 0) {
-                return interaction.editReply(`⏳ Wait ${Math.ceil(cooldownLeft / 1000)}s.`);
+                return interaction.editReply({ content: `⏳ Wait ${Math.ceil(cooldownLeft / 1000)}s.`, flags: MessageFlags.Ephemeral });
             }
 
             await interaction.member.roles.add(TICKET_ROLE_ID).catch(() => {});
@@ -582,7 +585,7 @@ client.on('interactionCreate', async (interaction) => {
                 });
             } catch (err) {
                 console.error('Channel creation failed:', err);
-                return interaction.editReply("❌ Failed to create ticket channel.");
+                return interaction.editReply({ content: "❌ Failed to create ticket channel.", flags: MessageFlags.Ephemeral });
             }
 
             ticketData.set(channel.id, {
@@ -612,23 +615,23 @@ client.on('interactionCreate', async (interaction) => {
                 components: [buttons],
             });
 
-            return interaction.editReply(`✅ Ticket created → ${channel}`);
+            return interaction.editReply({ content: `✅ Ticket created → ${channel}`, flags: MessageFlags.Ephemeral });
         }
 
         // 9. TICKET BUTTONS
         if (interaction.isButton()) {
             const data = ticketData.get(interaction.channel.id);
-            if (!data) return interaction.reply({ content: "Ticket no longer exists.", ephemeral: true });
+            if (!data) return interaction.reply({ content: "Ticket no longer exists.", flags: MessageFlags.Ephemeral });
 
             if (!isSupportStaff(interaction.member)) {
-                return interaction.reply({ content: "🚫 Only support staff can manage tickets.", ephemeral: true });
+                return interaction.reply({ content: "🚫 Only support staff can manage tickets.", flags: MessageFlags.Ephemeral });
             }
 
             await interaction.deferUpdate();
 
             if (interaction.customId === 'claim_ticket') {
                 if (data.claimedBy) {
-                    return interaction.followUp({ content: `Already claimed by <@${data.claimedBy}>.`, ephemeral: true });
+                    return interaction.followUp({ content: `Already claimed by <@${data.claimedBy}>.`, flags: MessageFlags.Ephemeral });
                 }
 
                 ticketData.set(interaction.channel.id, { ...data, claimedBy: interaction.user.id });
@@ -650,7 +653,7 @@ client.on('interactionCreate', async (interaction) => {
 
             if (interaction.customId === 'close_ticket') {
                 if (data.claimedBy && data.claimedBy !== interaction.user.id) {
-                    return interaction.followUp({ content: "🚫 Only the claiming staff can close this ticket.", ephemeral: true });
+                    return interaction.followUp({ content: "🚫 Only the claiming staff can close this ticket.", flags: MessageFlags.Ephemeral });
                 }
 
                 const transcript = await saveTranscript(interaction.channel);
@@ -661,7 +664,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 await interaction.followUp({
                     content: transcript ? "📑 Closing... (transcript saved)" : "📑 Closing... (transcript failed)",
-                    ephemeral: true
+                    flags: MessageFlags.Ephemeral
                 });
 
                 ticketData.delete(interaction.channel.id);
@@ -673,7 +676,7 @@ client.on('interactionCreate', async (interaction) => {
     } catch (err) {
         console.error('Interaction error:', err);
         if (!interaction.deferred && !interaction.replied) {
-            interaction.reply({ content: "An error occurred.", ephemeral: true }).catch(() => {});
+            interaction.reply({ content: "An error occurred.", flags: MessageFlags.Ephemeral }).catch(() => {});
         }
     }
 });
@@ -686,7 +689,7 @@ client.on('channelDelete', async (channel) => {
     }
 });
 
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     await loadConfig();
     await loadTicketState();
     await pruneMissingTicketChannels();
