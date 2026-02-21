@@ -68,7 +68,7 @@ const BLOCKED_ROLE_IDS = [
     '1472280229794943282'
 ];
 
-// Role that can see ALL tickets (override)
+// Role that can see ALL tickets (even claimed ones)
 const ALL_TICKETS_ROLE_ID = '1472278188469125355';
 
 const BOT_COLOR = 0x2b6cb0;
@@ -280,7 +280,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: "✅ Dashboard deployed.", flags: MessageFlags.Ephemeral });
         }
 
-        // 2. TICKET STATS — FIXED VERSION
+        // 2. TICKET STATS
         if (interaction.isChatInputCommand() && interaction.commandName === 'ticketstats') {
             if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
                 return interaction.reply({ content: "🚫 Admin only.", flags: MessageFlags.Ephemeral });
@@ -324,7 +324,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 3. OWNER PANEL (text or embed editing)
+        // 3. OWNER PANEL
         if (interaction.isChatInputCommand() && interaction.commandName === 'ownerpanel') {
             if (!isBotOwner(interaction)) {
                 return interaction.reply({ content: "🚫 Owner-only command.", flags: MessageFlags.Ephemeral });
@@ -443,6 +443,84 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
+        // 6. SETUP COMMAND (now with full options)
+        if (interaction.isChatInputCommand() && interaction.commandName === 'setup') {
+            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return interaction.reply({ content: "🚫 Admin only.", flags: MessageFlags.Ephemeral });
+            }
+
+            const logs = interaction.options.getChannel('logs');
+            const staff = interaction.options.getRole('staff');
+            const ia = interaction.options.getRole('ia_role');
+            const mgmt = interaction.options.getRole('management_role');
+
+            if (logs) config.logChannel = logs.id;
+            if (staff) config.staffRole = staff.id;
+            if (ia) config.iaRole = ia.id;
+            if (mgmt) config.mgmtRole = mgmt.id;
+
+            await saveConfig();
+
+            const setupEmbed = new EmbedBuilder()
+                .setColor(BOT_COLOR)
+                .setTitle('Setup Updated')
+                .addFields(
+                    { name: 'Logs Channel', value: formatSetupValue(config.logChannel, 'channel'), inline: true },
+                    { name: 'Staff Role',   value: formatSetupValue(config.staffRole, 'role'), inline: true },
+                    { name: 'IA Role',      value: formatSetupValue(config.iaRole, 'role'), inline: true },
+                    { name: 'Management Role', value: formatSetupValue(config.mgmtRole, 'role'), inline: true },
+                )
+                .setFooter({ text: `Ticket cooldown: ${Math.round(TICKET_COOLDOWN_MS / 1000)}s` });
+
+            return interaction.reply({ embeds: [setupEmbed], flags: MessageFlags.Ephemeral });
+        }
+
+        // NEW: /ticketpersonadd
+        if (interaction.isChatInputCommand() && interaction.commandName === 'ticketpersonadd') {
+            const channel = interaction.channel;
+            const data = ticketData.get(channel.id);
+
+            if (!data) return interaction.reply({ content: "This is not a ticket channel.", flags: MessageFlags.Ephemeral });
+            if (!data.claimedBy || data.claimedBy !== interaction.user.id) {
+                return interaction.reply({ content: "Only the person who claimed this ticket can add users.", flags: MessageFlags.Ephemeral });
+            }
+
+            const user = interaction.options.getUser('user', true);
+
+            try {
+                await channel.permissionOverwrites.edit(user.id, {
+                    ViewChannel: true,
+                    SendMessages: true,
+                    ReadMessageHistory: true
+                });
+                return interaction.reply({ content: `Added ${user} to this ticket.`, flags: MessageFlags.Ephemeral });
+            } catch (err) {
+                console.error('Failed to add user:', err);
+                return interaction.reply({ content: "Failed to add user. Check bot permissions.", flags: MessageFlags.Ephemeral });
+            }
+        }
+
+        // NEW: /ticketpersonremove
+        if (interaction.isChatInputCommand() && interaction.commandName === 'ticketpersonremove') {
+            const channel = interaction.channel;
+            const data = ticketData.get(channel.id);
+
+            if (!data) return interaction.reply({ content: "This is not a ticket channel.", flags: MessageFlags.Ephemeral });
+            if (!data.claimedBy || data.claimedBy !== interaction.user.id) {
+                return interaction.reply({ content: "Only the person who claimed this ticket can remove users.", flags: MessageFlags.Ephemeral });
+            }
+
+            const user = interaction.options.getUser('user', true);
+
+            try {
+                await channel.permissionOverwrites.delete(user.id);
+                return interaction.reply({ content: `Removed ${user} from this ticket.`, flags: MessageFlags.Ephemeral });
+            } catch (err) {
+                console.error('Failed to remove user:', err);
+                return interaction.reply({ content: "Failed to remove user. Check bot permissions.", flags: MessageFlags.Ephemeral });
+            }
+        }
+
         // 7. DASHBOARD MENU RESPONSES
         if (interaction.isStringSelectMenu() && interaction.customId === 'asrp_dashboard') {
             const responses = {
@@ -527,22 +605,15 @@ client.on('interactionCreate', async (interaction) => {
 
             let channel;
             try {
-                // Build permission overwrites
                 const overwrites = [
-                    // Everyone: hidden
                     { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                    // Ticket opener: visible + send messages
-                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                    // Support role: visible + send messages
-                    { id: pingRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+                    { id: pingRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+                    { id: ALL_TICKETS_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory] }
                 ];
 
-                // Explicitly DENY access to blocked roles
                 BLOCKED_ROLE_IDS.forEach(roleId => {
-                    overwrites.push({
-                        id: roleId,
-                        deny: [PermissionsBitField.Flags.ViewChannel]
-                    });
+                    overwrites.push({ id: roleId, deny: [PermissionsBitField.Flags.ViewChannel] });
                 });
 
                 channel = await interaction.guild.channels.create({
@@ -585,9 +656,10 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.editReply({ content: `✅ Ticket created → ${channel}`, flags: MessageFlags.Ephemeral });
         }
 
-        // 9. TICKET BUTTONS
+        // 9. TICKET BUTTONS (updated for claim logic)
         if (interaction.isButton()) {
-            const data = ticketData.get(interaction.channel.id);
+            const channel = interaction.channel;
+            const data = ticketData.get(channel.id);
             if (!data) return interaction.reply({ content: "Ticket no longer exists.", flags: MessageFlags.Ephemeral });
 
             if (!isSupportStaff(interaction.member)) {
@@ -601,8 +673,22 @@ client.on('interactionCreate', async (interaction) => {
                     return interaction.followUp({ content: `Already claimed by <@${data.claimedBy}>.`, flags: MessageFlags.Ephemeral });
                 }
 
-                ticketData.set(interaction.channel.id, { ...data, claimedBy: interaction.user.id });
+                ticketData.set(channel.id, { ...data, claimedBy: interaction.user.id });
                 await saveTicketState();
+
+                // Update permissions: only claimer, opener, and ALL_TICKETS_ROLE_ID can see it
+                const overwrites = [
+                    { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                    { id: data.openerId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory] },
+                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+                    { id: ALL_TICKETS_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory] }
+                ];
+
+                BLOCKED_ROLE_IDS.forEach(roleId => {
+                    overwrites.push({ id: roleId, deny: [PermissionsBitField.Flags.ViewChannel] });
+                });
+
+                await channel.permissionOverwrites.set(overwrites);
 
                 await interaction.message.edit({
                     components: [new ActionRowBuilder().addComponents(
@@ -610,7 +696,7 @@ client.on('interactionCreate', async (interaction) => {
                     )]
                 });
 
-                await interaction.channel.send({
+                await channel.send({
                     embeds: [new EmbedBuilder()
                         .setColor(0x43b581)
                         .setDescription(`✅ Claimed by ${interaction.user}`)]
@@ -623,7 +709,7 @@ client.on('interactionCreate', async (interaction) => {
                     return interaction.followUp({ content: "🚫 Only the claiming staff can close this ticket.", flags: MessageFlags.Ephemeral });
                 }
 
-                const transcript = await saveTranscript(interaction.channel);
+                const transcript = await saveTranscript(channel);
                 await logTicketClose(interaction, data, transcript);
 
                 const member = await interaction.guild.members.fetch(data.openerId).catch(() => null);
@@ -634,10 +720,10 @@ client.on('interactionCreate', async (interaction) => {
                     flags: MessageFlags.Ephemeral
                 });
 
-                ticketData.delete(interaction.channel.id);
+                ticketData.delete(channel.id);
                 await saveTicketState();
 
-                setTimeout(() => interaction.channel.delete().catch(console.error), 6000);
+                setTimeout(() => channel.delete().catch(console.error), 6000);
             }
         }
     } catch (err) {
@@ -691,10 +777,18 @@ client.once('clientReady', async () => {
         new SlashCommandBuilder()
             .setName('setup')
             .setDescription('Configure ticket system')
-            .addChannelOption(o => o.setName('logs').setDescription('Log channel'))
-            .addRoleOption(o => o.setName('staff').setDescription('Staff role'))
-            .addRoleOption(o => o.setName('ia_role').setDescription('IA role'))
-            .addRoleOption(o => o.setName('management_role').setDescription('Management role')),
+            .addChannelOption(o => o.setName('logs').setDescription('Log channel').setRequired(false))
+            .addRoleOption(o => o.setName('staff').setDescription('Staff role').setRequired(false))
+            .addRoleOption(o => o.setName('ia_role').setDescription('IA role').setRequired(false))
+            .addRoleOption(o => o.setName('management_role').setDescription('Management role').setRequired(false)),
+        new SlashCommandBuilder()
+            .setName('ticketpersonadd')
+            .setDescription('Add a user to this claimed ticket (claimer only)')
+            .addUserOption(o => o.setName('user').setDescription('User to add').setRequired(true)),
+        new SlashCommandBuilder()
+            .setName('ticketpersonremove')
+            .setDescription('Remove a user from this claimed ticket (claimer only)')
+            .addUserOption(o => o.setName('user').setDescription('User to remove').setRequired(true)),
     ];
 
     try {
