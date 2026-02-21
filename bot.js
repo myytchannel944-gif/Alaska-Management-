@@ -323,7 +323,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: "✅ Departments dashboard deployed.", flags: MessageFlags.Ephemeral });
         }
 
-        // 3. DEPARTMENT DROPDOWN HANDLER (prevents "interaction failed")
+        // 3. DEPARTMENT DROPDOWN HANDLER (with real links)
         if (interaction.isStringSelectMenu() && interaction.customId === 'select_department') {
             const value = interaction.values[0];
 
@@ -331,10 +331,10 @@ client.on('interactionCreate', async (interaction) => {
 
             switch (value) {
                 case 'ast':
-                    replyText = '✅ **Alaska State Troopers** is **OPEN**!\nJoin here: https://discord.gg/your-ast-invite-link';
+                    replyText = '✅ **Alaska State Troopers** is **OPEN**!\nJoin here: https://discord.gg/WhP5Xk85Yw';
                     break;
                 case 'dot':
-                    replyText = '✅ **Alaska Department of Transportation** is **OPEN**!\nJoin here: https://discord.gg/your-dot-invite-link';
+                    replyText = '✅ **Alaska Department of Transportation** is **OPEN**!\nJoin here: https://discord.gg/JCPDApbKmH';
                     break;
                 case 'apd':
                     replyText = '🔴 **Alaska Police Department** is currently **CLOSED** / in development.';
