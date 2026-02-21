@@ -1,7 +1,6 @@
 require('dotenv').config();
 const fs = require('fs/promises');
 const path = require('path');
-
 const {
     Client,
     GatewayIntentBits,
@@ -11,11 +10,11 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    StringSelectMenuBuilder,
     ChannelType,
     PermissionsBitField,
     REST,
     Routes,
+    StringSelectMenuBuilder,
 } = require('discord.js');
 
 const client = new Client({
@@ -25,19 +24,11 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.MessageContent,
     ],
-    partials: [
-        Partials.Channel,
-        Partials.GuildMember,
-        Partials.Message,
-    ],
+    partials: [Partials.Channel, Partials.GuildMember, Partials.Message],
 });
 
-// ────────────────────────────────────────────────
-// Configuration
-// ────────────────────────────────────────────────
-
+// ─── Configuration ────────────────────────────────────────
 const CONFIG_PATH = path.join(__dirname, 'config.json');
-
 const DEFAULT_CONFIG = {
     logChannel: null,
     staffRole: null,
@@ -51,393 +42,332 @@ async function loadConfig() {
     try {
         const data = await fs.readFile(CONFIG_PATH, 'utf-8');
         config = { ...DEFAULT_CONFIG, ...JSON.parse(data) };
-        console.log('[CONFIG] Loaded successfully');
     } catch (err) {
-        if (err.code !== 'ENOENT') console.error('[CONFIG] Load error:', err);
+        if (err.code !== 'ENOENT') console.error('Config load error:', err);
     }
 }
 
 async function saveConfig() {
     try {
         await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
-        console.log('[CONFIG] Saved successfully');
     } catch (err) {
-        console.error('[CONFIG] Save failed:', err);
+        console.error('Failed to save config:', err);
     }
 }
 
-// ────────────────────────────────────────────────
-// Constants & Assets
-// ────────────────────────────────────────────────
-
-const COLORS = {
-    PRIMARY: 0x2b6cb0,
-    SUCCESS: 0x43b581,
-    DANGER:  0xff4757,
-};
-
-const ASSETS = {
-    SUPPORT_BANNER: "https://image2url.com/r2/default/images/1771467061096-fc09db59-fd9e-461f-ba30-c8b1ee42ff1f.jpg",
-    DASHBOARD_ICON: "https://image2url.com/r2/default/images/1771563774401-5dd69719-a2a9-42d7-a76e-c9028c62fe2f.jpg",
-};
-
+// ─── Constants ────────────────────────────────────────────
+const BOT_COLOR = 0x2b6cb0;
+const SUPPORT_BANNER = "https://image2url.com/r2/default/images/1771467061096-fc09db59-fd9e-461f-ba30-c8b1ee42ff1f.jpg";
+const DASHBOARD_ICON = "https://image2url.com/r2/default/images/1771563774401-5dd69719-a2a9-42d7-a76e-c9028c62fe2f.jpg";
 const TICKET_ROLE_ID = "1474234032677060795";
-const ticketData = new Map();
 
-// ────────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────────
+const ticketData = new Map(); // channelId → { openerId, startTime, claimedBy? }
 
-function getPingRoleId(department) {
+function getPingRole(department) {
     if (department === 'internal-affairs') return config.iaRole;
-    if (department === 'management') return config.mgmtRole;
+    if (department === 'management' || department === 'partnership') return config.mgmtRole;
     return config.staffRole;
 }
 
-function createControlButtons(claimed = false) {
-    const row = new ActionRowBuilder();
+// ─── Helpers ──────────────────────────────────────────────
+async function saveTranscript(channel) {
+    try {
+        const messages = await channel.messages.fetch({ limit: 100 });
+        const lines = messages.reverse().map(m => {
+            const time = m.createdAt.toISOString().slice(0, 19).replace('T', ' ');
+            const author = m.author.tag;
+            let content = m.content || '';
 
-    if (!claimed) {
-        row.addComponents(
-            new ButtonBuilder()
-                .setCustomId('claim_ticket')
-                .setLabel('Claim')
-                .setStyle(ButtonStyle.Success),
-        );
+            if (m.embeds.length > 0) {
+                content += ' [Embed]';
+            }
+            if (m.attachments.size > 0) {
+                content += ' [Attachment(s)]';
+            }
+
+            return `[${time}] ${author}: ${content}`;
+        });
+
+        const filename = `transcript-${channel.name}-${Date.now()}.txt`;
+        const filepath = path.join(__dirname, 'transcripts', filename);
+
+        await fs.mkdir(path.join(__dirname, 'transcripts'), { recursive: true });
+        await fs.writeFile(filepath, lines.join('\n'), 'utf-8');
+
+        return { filename, filepath };
+    } catch (err) {
+        console.error('Transcript save failed:', err);
+        return null;
     }
-
-    row.addComponents(
-        new ButtonBuilder()
-            .setCustomId('close_ticket')
-            .setLabel('Close')
-            .setStyle(ButtonStyle.Danger),
-    );
-
-    return row;
 }
 
-// ────────────────────────────────────────────────
-// Interaction Handler
-// ────────────────────────────────────────────────
+async function logTicketClose(interaction, data, transcriptInfo) {
+    if (!config.logChannel) return;
 
-client.on('interactionCreate', async interaction => {
+    const logChannel = interaction.guild.channels.cache.get(config.logChannel);
+    if (!logChannel) return;
+
+    const opener = await interaction.guild.members.fetch(data.openerId).catch(() => null);
+    const claimedBy = data.claimedBy ? `<@${data.claimedBy}>` : 'Not claimed';
+
+    const embed = new EmbedBuilder()
+        .setTitle(`Ticket Closed: ${interaction.channel.name}`)
+        .setColor(0xff5555)
+        .addFields(
+            { name: 'Opener', value: opener ? `${opener.user.tag} (${opener})` : 'Unknown', inline: true },
+            { name: 'Claimed by', value: claimedBy, inline: true },
+            { name: 'Closed by', value: `${interaction.user.tag} (${interaction.user})`, inline: true },
+            { name: 'Duration', value: `${Math.round((Date.now() - data.startTime) / 60000)} minutes`, inline: true }
+        )
+        .setTimestamp();
+
+    const files = transcriptInfo ? [{ attachment: transcriptInfo.filepath, name: transcriptInfo.filename }] : [];
+
+    await logChannel.send({ embeds: [embed], files }).catch(console.error);
+}
+
+// ─── Interaction Handler ──────────────────────────────────
+client.on('interactionCreate', async (interaction) => {
     if (!interaction.guild || interaction.user.bot) return;
 
     try {
-        // Slash Commands
-        if (interaction.isChatInputCommand()) {
-            if (interaction.commandName === 'dashboard') {
-                if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                    return interaction.reply({ content: "Admin only.", ephemeral: true });
-                }
-
-                const embed = new EmbedBuilder()
-                    .setAuthor({ name: "ALASKA STATE ROLEPLAY • OFFICIAL DIRECTORY", iconURL: ASSETS.DASHBOARD_ICON })
-                    .setTitle("Welcome to the ASRP Dashboard")
-                    .setDescription(
-                        "**This is your central hub for everything Alaska State RolePlay!**\n\n" +
-                        "Whether you're a new member, a returning player, or just checking things out — " +
-                        "this dashboard gives you quick access to the most important community information.\n\n" +
-                        "Use the dropdown menu below to explore:\n" +
-                        "• **Staff Applications** — Want to join the team? Check requirements & apply here\n" +
-                        "• **In-Game Rules** — Essential guidelines for serious roleplay on the server\n" +
-                        "• **Discord Rules** — Our community standards & expectations on this server\n\n" +
-                        "We recommend **every member** reads through these sections at least once.\n" +
-                        "Following the rules helps keep our community respectful, fun, and drama-free.\n\n" +
-                        "Ready to dive in? Select an option below ↓"
-                    )
-                    .setColor(COLORS.PRIMARY)
-                    .setImage(ASSETS.DASHBOARD_ICON)
-                    .setFooter({ text: "Alaska State RolePlay • Serious ER:LC Roleplay Community" })
-                    .setTimestamp();
-
-                const menu = new StringSelectMenuBuilder()
-                    .setCustomId('asrp_dashboard')
-                    .setPlaceholder('Select an option...')
-                    .addOptions([
-                        { label: 'Staff Applications', value: 'staff_apps', emoji: '📋' },
-                        { label: 'In-Game Rules',      value: 'ig_rules',   emoji: '🎮' },
-                        { label: 'Discord Rules',      value: 'dc_rules',   emoji: '📜' },
-                    ]);
-
-                await interaction.channel.send({
-                    embeds: [embed],
-                    components: [new ActionRowBuilder().addComponents(menu)],
-                });
-
-                return interaction.reply({ content: "Dashboard deployed.", ephemeral: true });
+        // 1. DASHBOARD COMMAND
+        if (interaction.isChatInputCommand() && interaction.commandName === 'dashboard') {
+            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return interaction.reply({ content: "🚫 Admin only.", ephemeral: true });
             }
 
-            if (interaction.commandName === 'setup') {
-                if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                    return interaction.reply({ content: "Admin only.", ephemeral: true });
-                }
+            const embed = new EmbedBuilder()
+                .setAuthor({ name: "ALASKA STATE ROLEPLAY • OFFICIAL DIRECTORY", iconURL: DASHBOARD_ICON })
+                .setTitle("Dashboard")
+                .setDescription(
+                    "**Welcome to Alaska State RolePlay!**\n\n" +
+                    "Welcome to the best ER:LC roleplay community. Here you will find all of the information needed to get started.\n\n" +
+                    "Before participating, make sure you've read and understand our rules and application process.\n" +
+                    "Use the menu below to navigate."
+                )
+                .setColor(BOT_COLOR)
+                .setImage(DASHBOARD_ICON)
+                .setTimestamp();
 
-                config.logChannel    = interaction.options.getChannel('logs')?.id ?? null;
-                config.staffRole     = interaction.options.getRole('staff')?.id ?? null;
-                config.iaRole        = interaction.options.getRole('ia_role')?.id ?? null;
-                config.mgmtRole      = interaction.options.getRole('management_role')?.id ?? null;
+            const menu = new StringSelectMenuBuilder()
+                .setCustomId('asrp_dashboard')
+                .setPlaceholder('Select an option...')
+                .addOptions([
+                    { label: 'Staff Applications', value: 'staff_apps', description: 'Join the ASRP team', emoji: '📝' },
+                    { label: 'In-Game Rules',      value: 'ig_rules',   description: 'ER:LC Penal Code',     emoji: '🎮' },
+                    { label: 'Discord Rules',      value: 'dc_rules',   description: 'Community Guidelines', emoji: '📜' },
+                ]);
 
-                await saveConfig();
+            await interaction.channel.send({
+                embeds: [embed],
+                components: [new ActionRowBuilder().addComponents(menu)],
+            });
 
-                const menu = new StringSelectMenuBuilder()
-                    .setCustomId('ticket_type')
-                    .setPlaceholder('Select Department...')
-                    .addOptions([
-                        { label: 'General Support',   value: 'general',         emoji: '❓' },
-                        { label: 'Internal Affairs',  value: 'internal-affairs', emoji: '👮' },
-                        { label: 'Management',        value: 'management',      emoji: '💎' },
-                    ]);
-
-                const embed = new EmbedBuilder()
-                    .setTitle("🏛️ Alaska Support & Relations")
-                    .setDescription(
-                        "**Select a category below to initiate a private session.**\n\n" +
-
-                        "♦ **General Support**\n" +
-                        "Server help and partnerships.\n\n" +
-
-                        "♦ **Internal Affairs**\n" +
-                        "Staff misconduct reports.\n\n" +
-
-                        "♦ **Management**\n" +
-                        "Executive appeals and perk claims."
-                    )
-                    .setColor(COLORS.PRIMARY)
-                    .setImage(ASSETS.SUPPORT_BANNER)
-                    .setFooter({ text: "SUPPORT — Alaska State Roleplay" });
-
-                await interaction.channel.send({
-                    embeds: [embed],
-                    components: [new ActionRowBuilder().addComponents(menu)],
-                });
-
-                return interaction.reply({ content: "Ticket panel deployed.", ephemeral: true });
-            }
+            return interaction.reply({ content: "✅ Dashboard deployed.", ephemeral: true });
         }
 
-        // String Select Menus
-        if (interaction.isStringSelectMenu()) {
-            if (interaction.customId === 'asrp_dashboard') {
-                const pages = {
-                    staff_apps: {
-                        title: "📋 Staff Applications",
-                        content:
-                            "**Join the Alaska State RolePlay Staff Team**\n\n" +
-                            "**Staff Applications are OPEN** 🟢\n\n" +
-                            "We are currently accepting applications for motivated and reliable members.\n\n" +
-                            "📌 **What we’re looking for**\n" +
-                            "• Maturity & professionalism\n" +
-                            "• Strong understanding of roleplay rules\n" +
-                            "• Active participation in the community\n" +
-                            "• Good communication skills\n" +
-                            "• Ability to stay calm in difficult situations\n\n" +
-                            "🔗 **Apply Here**\n" +
-                            "[Staff Application Form](https://melonly.xyz/forms/7429303261795979264)\n\n" +
-                            "📩 **Next steps**\n" +
-                            "→ You’ll receive a confirmation DM after submitting\n" +
-                            "→ Decisions & updates posted in #📋┃application-results\n" +
-                            "→ Typical response time: within 24 hours\n\n" +
-                            "⚠️ **Please note**\n" +
-                            "Only apply if you are serious and can commit time. Duplicate or low-effort applications will be denied.",
-                    },
-                    ig_rules: {
-                        title: "🎮 In-Game Rules",
-                        content:
-                            "┃ **Be Respectful.** No bullying, hate speech, or toxic behavior.\n\n" +
-                            "┃ **Exploits or Hacks.** Using cheats, glitches, or mods is an instant ban.\n\n" +
-                            "┃ **Serious RP Only.** No trolling, clown RP, or unrealistic scenarios.\n\n" +
-                            "┃ **Failed RP** Don’t do things that would be impossible in real life (e.g. superhuman strength)\n\n" +
-                            "┃ **RDM** Killing without valid roleplay reason is not allowed.\n\n" +
-                            "┃ **VDM** Don’t run people over unless part of an approved RP.",
-                    },
-                    dc_rules: {
-                        title: "📜 Discord Rules",
-                        content:
-                            "┃ **Discord Nicknames must match your Roblox Username.** Your nickname must match your Roblox Username without having any special characters and nothing in front or behind, a callsign is allowed.\n\n" +
-                            "┃ **Respect all members.** Discriminative or racial slurs are prohibited. We don’t ask you to love somebody but be kind particularly.\n\n" +
-                            "┃ **Message content.** Spamming or flooding chat is prohibited. NSFW, pornography, nudity, etc. are prohibited. “Bad words” are allowed.\n\n" +
-                            "┃ **Alternative Accounts are prohibited.** Alternative accounts, a.k.a. “Alt Accounts” are prohibited.\n\n" +
-                            "┃ **Advertising** Don’t advertise your server in DM’s or conversations.\n\n" +
-                            "┃ **Do not send any suspicious links.** Link shorteners, IP grabbers, and other potentially questionable content fall under this category.\n\n" +
-                            "┃ **Use channels for their intended purpose** Make sure your text and audio chats are appropriate for the right channels.\n\n" +
-                            "┃ **English only** You are required to only use English so Moderators can deal with mod scenes accordingly.\n\n" +
-                            "┃ **Contributing** Any contributions including liveries, uniforms, and anything else are property of Alaska State Roleplay.\n\n" +
-                            "┃ **Terms of use** You must abide by the Discord Community Guidelines and the Discord Terms of Service. Not following both will result in strict moderation action.",
-                    },
-                };
-
-                const selected = interaction.values[0];
-                const page = pages[selected];
-
-                if (!page) return interaction.reply({ content: "Invalid option.", ephemeral: true });
-
-                const embed = new EmbedBuilder()
-                    .setTitle(page.title)
-                    .setDescription(page.content)
-                    .setColor(COLORS.PRIMARY)
-                    .setThumbnail(ASSETS.DASHBOARD_ICON);
-
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+        // 2. SETUP COMMAND
+        if (interaction.isChatInputCommand() && interaction.commandName === 'setup') {
+            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return interaction.reply({ content: "🚫 Admin only.", ephemeral: true });
             }
 
-            if (interaction.customId === 'ticket_type') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
+            config.logChannel   = interaction.options.getChannel('logs')?.id ?? config.logChannel;
+            config.staffRole    = interaction.options.getRole('staff')?.id ?? config.staffRole;
+            config.iaRole       = interaction.options.getRole('ia_role')?.id ?? config.iaRole;
+            config.mgmtRole     = interaction.options.getRole('management_role')?.id ?? config.mgmtRole;
 
-                try {
-                    if (!config.staffRole) {
-                        return interaction.editReply("Bot not configured. Run `/setup` first.");
-                    }
+            await saveConfig();
 
-                    const department = interaction.values[0];
-                    const pingRoleId = getPingRoleId(department);
-                    if (!pingRoleId) {
-                        return interaction.editReply("Missing role configuration for this department.");
-                    }
+            const embed = new EmbedBuilder()
+                .setTitle("Assistance")
+                .setDescription(
+                    "Welcome to the **Assistance Dashboard**!\n" +
+                    "Here you can easily open a ticket for various types of support.\n\n" +
+                    "**Trolling or abuse of the ticket system may result in punishment.**\n\n" +
+                    "👤 **General Support** • 👤 General Inquiries • Reports • Concerns\n\n" +
+                    "🤝 **Partnership Support** • 🤝 Partnership & affiliation requests\n\n" +
+                    "🛡️ **Internal Affairs** • 🛡️ Staff reports • Appeals • Role requests\n\n" +
+                    "🛠️ **Management Support** • 🛠️ Giveaways • High-rank • Purchases"
+                )
+                .setColor(BOT_COLOR)
+                .setImage(SUPPORT_BANNER);
 
-                    await interaction.member.roles.add(TICKET_ROLE_ID).catch(() => {});
+            const menu = new StringSelectMenuBuilder()
+                .setCustomId('ticket_type')
+                .setPlaceholder('Request Assistance...')
+                .addOptions([
+                    { label: 'General Support',     value: 'general',         emoji: '👤' },
+                    { label: 'Partnership Support', value: 'partnership',     emoji: '🤝' },
+                    { label: 'Internal Affairs',    value: 'internal-affairs', emoji: '🛡️' },
+                    { label: 'Management Support',  value: 'management',      emoji: '🛠️' },
+                ]);
 
-                    const name = `${department}-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 100);
+            await interaction.channel.send({
+                embeds: [embed],
+                components: [new ActionRowBuilder().addComponents(menu)],
+            });
 
-                    const ticketChannel = await interaction.guild.channels.create({
-                        name,
-                        type: ChannelType.GuildText,
-                        permissionOverwrites: [
-                            { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                            { id: interaction.user.id,   allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                            { id: pingRoleId,            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                        ],
-                    });
-
-                    ticketData.set(ticketChannel.id, {
-                        openerId: interaction.user.id,
-                        startTime: Date.now(),
-                        claimedBy: null,
-                        department,
-                    });
-
-                    await ticketChannel.send({
-                        content: `${interaction.user} | <@&${pingRoleId}>`,
-                        embeds: [new EmbedBuilder()
-                            .setTitle(`🏛️ ${department.charAt(0).toUpperCase() + department.slice(1)} Support`)
-                            .setColor(COLORS.PRIMARY)
-                            .setImage(ASSETS.SUPPORT_BANNER)],
-                        components: [createControlButtons()],
-                    });
-
-                    await interaction.editReply(`Ticket created → ${ticketChannel}`);
-
-                } catch (err) {
-                    console.error('Ticket creation failed:', err);
-                    await interaction.editReply("Failed to create ticket — check bot permissions.").catch(() => {});
-                }
-            }
+            return interaction.reply({ content: "✅ Assistance panel deployed.", ephemeral: true });
         }
 
-        // Buttons
+        // 3. DASHBOARD MENU RESPONSES
+        if (interaction.isStringSelectMenu() && interaction.customId === 'asrp_dashboard') {
+            const responses = {
+                staff_apps: { title: "📝 Applications + Forms", desc: "• Application Information\n┃ #「🌸」·applications\n• Status\n┃ Staff → OPEN\n┃ Media → OPEN\n\n🔗 [Staff Application](https://your-link.com)" },
+                ig_rules: { title: "🎮 In-Game Rules", desc: "**Rules**\nBe Respectful • No Exploits • Serious RP • No RDM/VDM" },
+                dc_rules: { title: "📜 Discord Rules", desc: "**Rules**\nRespect • No Advertising • No unnecessary pings • No NSFW • Keep drama private" }
+            };
+
+            const res = responses[interaction.values[0]];
+            if (!res) return interaction.reply({ content: "Invalid option.", ephemeral: true });
+
+            const embed = new EmbedBuilder()
+                .setTitle(res.title)
+                .setDescription(res.desc)
+                .setColor(BOT_COLOR)
+                .setThumbnail(DASHBOARD_ICON);
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        // 4. TICKET CREATION
+        if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_type') {
+            await interaction.deferReply({ ephemeral: true });
+
+            if (!config.staffRole || !config.iaRole || !config.mgmtRole) {
+                return interaction.editReply("⚠️ Run `/setup` first to configure roles.");
+            }
+
+            const dept = interaction.values[0];
+            const pingRoleId = getPingRole(dept);
+
+            if (!pingRoleId) return interaction.editReply("⚠️ Department role not set.");
+
+            await interaction.member.roles.add(TICKET_ROLE_ID).catch(() => {});
+
+            const channel = await interaction.guild.channels.create({
+                name: `ticket-${dept}-${interaction.user.username.toLowerCase()}`,
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                    { id: pingRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                ],
+            });
+
+            ticketData.set(channel.id, {
+                openerId: interaction.user.id,
+                startTime: Date.now(),
+                claimedBy: null,
+            });
+
+            const buttons = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger),
+            );
+
+            await channel.send({
+                content: `${interaction.user} | <@&${pingRoleId}>`,
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle(`🏛️ ${dept.toUpperCase().replace('-', ' ')} Ticket`)
+                        .setColor(BOT_COLOR)
+                        .setImage(SUPPORT_BANNER)
+                        .setDescription("Please describe your issue. A staff member will assist you soon.")
+                ],
+                components: [buttons],
+            });
+
+            return interaction.editReply(`✅ Ticket created → ${channel}`);
+        }
+
+        // 5. TICKET BUTTONS
         if (interaction.isButton()) {
-            const data = ticketData.get(interaction.channel?.id);
-            if (!data) {
-                if (!interaction.replied && !interaction.deferred) {
-                    return interaction.reply({ content: "Ticket data no longer exists.", ephemeral: true }).catch(() => {});
+            const data = ticketData.get(interaction.channel.id);
+            if (!data) return interaction.reply({ content: "Ticket no longer exists.", ephemeral: true });
+
+            // CLAIM
+            if (interaction.customId === 'claim_ticket') {
+                await interaction.deferUpdate();
+
+                if (data.claimedBy) {
+                    return interaction.followUp({ content: `Already claimed by <@${data.claimedBy}>.`, ephemeral: true });
                 }
+
+                ticketData.set(interaction.channel.id, { ...data, claimedBy: interaction.user.id });
+
+                await interaction.message.edit({
+                    components: [new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
+                    )]
+                });
+
+                await interaction.channel.send({
+                    embeds: [new EmbedBuilder()
+                        .setColor(0x43b581)
+                        .setDescription(`✅ Claimed by ${interaction.user}`)]
+                });
+
                 return;
             }
 
-            await interaction.deferUpdate().catch(() => {});
+            // CLOSE
+            if (interaction.customId === 'close_ticket') {
+                await interaction.deferReply({ ephemeral: true });
 
-            try {
-                if (interaction.customId === 'claim_ticket') {
-                    if (data.claimedBy) {
-                        return interaction.editReply({ content: "Already claimed." }).catch(() => {});
-                    }
+                const isClaimer = data.claimedBy && data.claimedBy === interaction.user.id;
+                const isUnclaimed = !data.claimedBy;
 
-                    data.claimedBy = interaction.user.id;
-
-                    await interaction.editReply({
-                        embeds: [new EmbedBuilder()
-                            .setColor(COLORS.SUCCESS)
-                            .setDescription(`Claimed by ${interaction.user}`)],
-                        components: [createControlButtons(true)],
-                    });
+                if (!isUnclaimed && !isClaimer) {
+                    return interaction.editReply({ content: "🚫 Only the claiming staff member can close this ticket." });
                 }
 
-                if (interaction.customId === 'close_ticket') {
-                    await interaction.editReply("Closing ticket...").catch(() => {});
+                const transcriptInfo = await saveTranscript(interaction.channel);
 
-                    const member = await interaction.guild.members.fetch(data.openerId).catch(() => null);
-                    if (member) await member.roles.remove(TICKET_ROLE_ID).catch(() => {});
+                // Log to configured channel + attach transcript
+                await logTicketClose(interaction, data, transcriptInfo);
 
-                    if (config.logChannel) {
-                        const logChannel = interaction.guild.channels.cache.get(config.logChannel);
-                        if (logChannel?.isTextBased()) {
-                            const duration = Math.floor((Date.now() - data.startTime) / 60000);
-                            const logEmbed = new EmbedBuilder()
-                                .setTitle("Ticket Closed")
-                                .setColor(COLORS.DANGER)
-                                .addFields(
-                                    { name: "Opener",     value: `<@${data.openerId}>`, inline: true },
-                                    { name: "Closed by",  value: `${interaction.user}`, inline: true },
-                                    { name: "Duration",   value: `${duration} min`,     inline: true },
-                                )
-                                .setTimestamp();
+                const member = await interaction.guild.members.fetch(data.openerId).catch(() => null);
+                if (member) await member.roles.remove(TICKET_ROLE_ID).catch(() => {});
 
-                            await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
-                        }
-                    }
+                await interaction.editReply({
+                    content: transcriptInfo
+                        ? `📑 Closing... (transcript saved & logged)`
+                        : `📑 Closing... (transcript failed)`
+                });
 
-                    ticketData.delete(interaction.channel.id);
-                    setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
-                }
-            } catch (err) {
-                console.error('Button handler error:', err);
-                await interaction.editReply({ content: "Error processing action." }).catch(() => {});
+                setTimeout(() => interaction.channel.delete().catch(console.error), 6000);
             }
         }
     } catch (err) {
         console.error('Interaction error:', err);
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: "Internal error occurred.", ephemeral: true }).catch(() => {});
+        if (!interaction.deferred && !interaction.replied) {
+            interaction.reply({ content: "Error occurred.", ephemeral: true }).catch(() => {});
         }
     }
 });
 
-// ─── Startup ──────────────────────────────────────────────────────
 client.once('ready', async () => {
     await loadConfig();
 
-    const commands = [
-        new SlashCommandBuilder()
-            .setName('dashboard')
-            .setDescription('Deploy dashboard panel'),
-
-        new SlashCommandBuilder()
-            .setName('setup')
-            .setDescription('Setup ticket system')
-            .addChannelOption(o => o.setName('logs').setDescription('Log channel').setRequired(true))
-            .addRoleOption(o => o.setName('staff').setDescription('Staff role').setRequired(true))
-            .addRoleOption(o => o.setName('ia_role').setDescription('IA role').setRequired(true))
-            .addRoleOption(o => o.setName('management_role').setDescription('Management role').setRequired(true)),
-    ];
-
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
-    try {
-        console.log(`Refreshing ${commands.length} commands...`);
+    const commands = [
+        new SlashCommandBuilder().setName('dashboard').setDescription('Deploy dashboard panel'),
+        new SlashCommandBuilder()
+            .setName('setup')
+            .setDescription('Configure ticket system')
+            .addChannelOption(o => o.setName('logs').setDescription('Log channel').setRequired(false))
+            .addRoleOption(o => o.setName('staff').setDescription('Staff role').setRequired(false))
+            .addRoleOption(o => o.setName('ia_role').setDescription('IA role').setRequired(false))
+            .addRoleOption(o => o.setName('management_role').setDescription('Management role').setRequired(false)),
+    ];
 
-        const TEST_GUILD_ID = '1472277307002589216';
-        await rest.put(
-            Routes.applicationGuildCommands(client.user.id, TEST_GUILD_ID),
-            { body: commands },
-        );
-        console.log(`Guild commands registered in server ${TEST_GUILD_ID}`);
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 
-    } catch (err) {
-        console.error('Command registration failed:', err);
-        if (err.code) console.log(`Error code: ${err.code} - ${err.message}`);
-    }
-
-    console.log(`✅ ${client.user.tag} is online`);
+    console.log(`✅ ${client.user.tag} online • Commands registered`);
 });
 
 client.login(process.env.TOKEN);
