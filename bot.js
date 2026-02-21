@@ -60,8 +60,6 @@ const BOT_COLOR = 0x2b6cb0;
 const SUPPORT_BANNER = "https://image2url.com/r2/default/images/1771467061096-fc09db59-fd9e-461f-ba30-c8b1ee42ff1f.jpg";
 const DASHBOARD_ICON = "https://image2url.com/r2/default/images/1771563774401-5dd69719-a2a9-42d7-a76e-c9028c62fe2f.jpg";
 const TICKET_ROLE_ID = "1474234032677060795";
-const RESULTS_CHANNEL_ID = "1473104073287930027";
-const ACCEPTED_ROLE_ID = "1472281473003294780";
 
 const ticketData = new Map();
 
@@ -372,62 +370,6 @@ client.on('interactionCreate', async (interaction) => {
                 setTimeout(() => interaction.channel.delete().catch(console.error), 6000);
             }
         }
-
-        // 6. APPLICATION RESULT COMMAND
-        if (interaction.isChatInputCommand() && interaction.commandName === 'application-result') {
-            if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-                return interaction.reply({ content: "🚫 You need Manage Messages permission to use this command.", ephemeral: true });
-            }
-
-            const status = interaction.options.getString('status');
-            const targetUser = interaction.options.getUser('user');
-            const reason = interaction.options.getString('reason') || 'No reason provided';
-
-            let title, color, description;
-
-            if (status === 'accepted') {
-                title = 'Accepted Application!';
-                color = 0x00ff88;
-                description = `Congratulations ${targetUser}!\n\n` +
-                              `Your application to **Alaska State Roleplay** has been **accepted**!\n\n` +
-                              `We're excited to have you join the team.\n` +
-                              `Check the training chat for next steps.\n\n` +
-                              `Thank you for applying — welcome aboard! 🚔`;
-
-                // Give the accepted role
-                try {
-                    const member = await interaction.guild.members.fetch(targetUser.id);
-                    await member.roles.add(ACCEPTED_ROLE_ID);
-                    console.log(`Added role ${ACCEPTED_ROLE_ID} to ${targetUser.tag} (accepted application)`);
-                } catch (err) {
-                    console.error(`Failed to add accepted role to ${targetUser.tag}:`, err);
-                }
-            } else {
-                title = 'Failed Application!';
-                color = 0xff5555;
-                description = `On behalf of Alaska State Roleplay, we are sad to have had to decline your application.\n\n` +
-                              `We appreciate all that you have put forward into applying for this position, but unfortunately it did not meet our set standards.\n\n` +
-                              `We apologize for this, and we wish you luck if you do want to try again in the future!\n\n` +
-                              `Thank you again ${targetUser} for applying and showing interest in joining our team.`;
-            }
-
-            const embed = new EmbedBuilder()
-                .setTitle(title)
-                .setDescription(description)
-                .setColor(color)
-                .setTimestamp()
-                .setFooter({ text: "Alaska State Roleplay Applications" });
-
-            const resultsChannel = interaction.guild.channels.cache.get(RESULTS_CHANNEL_ID);
-
-            if (!resultsChannel) {
-                return interaction.reply({ content: `Results channel (${RESULTS_CHANNEL_ID}) not found or inaccessible.`, ephemeral: true });
-            }
-
-            await resultsChannel.send({ content: `${targetUser}`, embeds: [embed] });
-
-            return interaction.reply({ content: `✅ **${status.toUpperCase()}** result posted to <#${RESULTS_CHANNEL_ID}>`, ephemeral: true });
-        }
     } catch (err) {
         console.error('Interaction error:', err);
         if (!interaction.deferred && !interaction.replied) {
@@ -450,25 +392,6 @@ client.once('ready', async () => {
             .addRoleOption(o => o.setName('staff').setDescription('Staff role').setRequired(false))
             .addRoleOption(o => o.setName('ia_role').setDescription('IA role').setRequired(false))
             .addRoleOption(o => o.setName('management_role').setDescription('Management role').setRequired(false)),
-        new SlashCommandBuilder()
-            .setName('application-result')
-            .setDescription('Post an application result (Accepted / Denied)')
-            .addStringOption(opt =>
-                opt.setName('status')
-                    .setDescription('Accepted or Denied')
-                    .setRequired(true)
-                    .addChoices(
-                        { name: 'Accepted', value: 'accepted' },
-                        { name: 'Denied', value: 'denied' }
-                    ))
-            .addUserOption(opt =>
-                opt.setName('user')
-                    .setDescription('The applicant')
-                    .setRequired(true))
-            .addStringOption(opt =>
-                opt.setName('reason')
-                    .setDescription('Optional short reason (for denied)')
-                    .setRequired(false)),
     ];
 
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
