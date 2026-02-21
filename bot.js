@@ -289,7 +289,41 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: "✅ Dashboard deployed.", flags: MessageFlags.Ephemeral });
         }
 
-        // 2. TICKET STATS
+        // 2. DEPT DASHBOARD COMMAND
+        if (interaction.isChatInputCommand() && interaction.commandName === 'deptdashboard') {
+            const dashboardEmbed = new EmbedBuilder()
+                .setTitle('🏔️ Alaska State Roleplay')
+                .setDescription(
+                    '━━━━━━━━━━━━━━━━━━\n**Departments Dashboard**\n━━━━━━━━━━━━━━━━━━\n\nSelect a department from the dropdown to get your invite and instructions.\n\n🚨 Professionalism is required\n📋 Follow all server rules\n⚠️ Abuse of roles will result in removal'
+                )
+                .setColor(5793266)
+                .addFields(
+                    { name: '🚓 Alaska State Troopers', value: '🟢 **OPEN**\nStatewide law enforcement. Handles highways, rural patrol, and major incidents.', inline: false },
+                    { name: '🚧 Alaska Department of Transportation', value: '🟢 **OPEN**\nHandles traffic control, road work, and scene support.', inline: false },
+                    { name: '🚔 Alaska Police Department', value: '🔴 **CLOSED**\nCurrently in development.', inline: false },
+                    { name: '🚒 Alaska Fire Department', value: '🔴 **CLOSED**\nCurrently in development.', inline: false }
+                )
+                .setFooter({ text: 'Alaska State Roleplay • Departments System' })
+                .setTimestamp();
+
+            const departmentDropdown = new StringSelectMenuBuilder()
+                .setCustomId('select_department')
+                .setPlaceholder('Select a department...')
+                .addOptions(
+                    { label: 'Alaska State Troopers', value: 'ast', description: 'Join AST server', emoji: '🚓' },
+                    { label: 'Alaska Department of Transportation', value: 'dot', description: 'Join DOT server', emoji: '🚧' },
+                    { label: 'Alaska Police Department', value: 'apd', description: 'Currently in development', emoji: '🚔', disabled: true },
+                    { label: 'Alaska Fire Department', value: 'afd', description: 'Currently in development', emoji: '🚒', disabled: true }
+                );
+
+            const dashboardRow = new ActionRowBuilder().addComponents(departmentDropdown);
+
+            await interaction.channel.send({ embeds: [dashboardEmbed], components: [dashboardRow] });
+
+            return interaction.reply({ content: "✅ Departments dashboard deployed.", flags: MessageFlags.Ephemeral });
+        }
+
+        // 3. TICKET STATS
         if (interaction.isChatInputCommand() && interaction.commandName === 'ticketstats') {
             try {
                 const openTickets = Array.from(ticketData.values());
@@ -329,7 +363,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 3. OWNER PANEL
+        // 4. OWNER PANEL
         if (interaction.isChatInputCommand() && interaction.commandName === 'ownerpanel') {
             const code = interaction.options.getString('code', true);
             if (code !== OWNER_PANEL_CODE) {
@@ -377,7 +411,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 4. SAY COMMAND
+        // 5. SAY COMMAND
         if (interaction.isChatInputCommand() && interaction.commandName === 'say') {
             const message = interaction.options.getString('message', true);
             const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
@@ -390,7 +424,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: `✅ Sent in ${targetChannel}.`, flags: MessageFlags.Ephemeral });
         }
 
-        // 5. EMBED BUILDER
+        // 6. EMBED BUILDER
         if (interaction.isChatInputCommand() && interaction.commandName === 'embedbuilder') {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -436,7 +470,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 6. SETUP COMMAND
+        // 7. SETUP COMMAND
         if (interaction.isChatInputCommand() && interaction.commandName === 'setup') {
             const logs = interaction.options.getChannel('logs');
             const staff = interaction.options.getRole('staff');
@@ -464,7 +498,63 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ embeds: [setupEmbed], flags: MessageFlags.Ephemeral });
         }
 
-        // 7. DASHBOARD MENU RESPONSES
+        // 8. TICKET PERSON ADD
+        if (interaction.isChatInputCommand() && interaction.commandName === 'ticketpersonadd') {
+            const channel = interaction.channel;
+            const data = ticketData.get(channel.id);
+
+            if (!data) return interaction.reply({ content: "This is not a ticket channel.", flags: MessageFlags.Ephemeral });
+
+            const member = interaction.member;
+            const isClaimer = data.claimedBy && data.claimedBy === interaction.user.id;
+            const isFoundership = member.roles.cache.has(FOUNDERSHIP_ROLE_ID);
+
+            if (!isClaimer && !isFoundership) {
+                return interaction.reply({ content: "Only the claimer or Foundership can add users to this ticket.", flags: MessageFlags.Ephemeral });
+            }
+
+            const user = interaction.options.getUser('user', true);
+
+            try {
+                await channel.permissionOverwrites.edit(user.id, {
+                    ViewChannel: true,
+                    SendMessages: true,
+                    ReadMessageHistory: true
+                });
+                return interaction.reply({ content: `Added ${user} to this ticket.`, flags: MessageFlags.Ephemeral });
+            } catch (err) {
+                console.error('Failed to add user:', err);
+                return interaction.reply({ content: "Failed to add user. Check bot permissions.", flags: MessageFlags.Ephemeral });
+            }
+        }
+
+        // 9. TICKET PERSON REMOVE
+        if (interaction.isChatInputCommand() && interaction.commandName === 'ticketpersonremove') {
+            const channel = interaction.channel;
+            const data = ticketData.get(channel.id);
+
+            if (!data) return interaction.reply({ content: "This is not a ticket channel.", flags: MessageFlags.Ephemeral });
+
+            const member = interaction.member;
+            const isClaimer = data.claimedBy && data.claimedBy === interaction.user.id;
+            const isFoundership = member.roles.cache.has(FOUNDERSHIP_ROLE_ID);
+
+            if (!isClaimer && !isFoundership) {
+                return interaction.reply({ content: "Only the claimer or Foundership can remove users from this ticket.", flags: MessageFlags.Ephemeral });
+            }
+
+            const user = interaction.options.getUser('user', true);
+
+            try {
+                await channel.permissionOverwrites.delete(user.id);
+                return interaction.reply({ content: `Removed ${user} from this ticket.`, flags: MessageFlags.Ephemeral });
+            } catch (err) {
+                console.error('Failed to remove user:', err);
+                return interaction.reply({ content: "Failed to remove user. Check bot permissions.", flags: MessageFlags.Ephemeral });
+            }
+        }
+
+        // 10. DASHBOARD MENU RESPONSES
         if (interaction.isStringSelectMenu() && interaction.customId === 'asrp_dashboard') {
             const responses = {
                 staff_apps: {
@@ -521,7 +611,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }
 
-        // 8. TICKET CREATION
+        // 11. TICKET CREATION
         if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_type') {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -599,7 +689,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.editReply({ content: `✅ Ticket created → ${channel}`, flags: MessageFlags.Ephemeral });
         }
 
-        // 9. TICKET BUTTONS
+        // 12. TICKET BUTTONS
         if (interaction.isButton()) {
             const channel = interaction.channel;
             const data = ticketData.get(channel.id);
@@ -853,6 +943,7 @@ client.once('clientReady', async () => {
 
     const commands = [
         new SlashCommandBuilder().setName('dashboard').setDescription('Deploy dashboard panel'),
+        new SlashCommandBuilder().setName('deptdashboard').setDescription('Deploy departments dashboard (Foundership only)'),
         new SlashCommandBuilder().setName('ticketstats').setDescription('View ticket stats (admin)'),
         new SlashCommandBuilder()
             .setName('ownerpanel')
