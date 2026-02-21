@@ -719,19 +719,27 @@ client.once('ready', async () => {
     try {
         const guildId = process.env.GUILD_ID;
         if (!guildId) {
-            console.log("⚠️ GUILD_ID not set in .env → no commands registered");
-            return;
+            console.log("⚠️ GUILD_ID not set in .env — skipping command registration");
+        } else {
+            // TEMP: Clear all existing guild commands first to remove duplicates/ghosts (remove this block after first successful run)
+            console.log("TEMP: Clearing all existing guild commands to fix duplicates...");
+            await rest.put(
+                Routes.applicationGuildCommands(client.user.id, guildId),
+                { body: [] }  // empty = delete all
+            );
+            console.log("TEMP: Guild commands cleared.");
+
+            // Now register the clean/current set
+            await rest.put(
+                Routes.applicationGuildCommands(client.user.id, guildId),
+                { body: commands }
+            );
+            console.log(`✅ Registered ${commands.length} guild-specific commands in ${guildId} (duplicates should be gone)`);
+
+            // END OF TEMP BLOCK — comment out or delete the clearing part above after it works once
         }
-
-        // Register ONLY in the specified guild (prevents global duplicates)
-        await rest.put(
-            Routes.applicationGuildCommands(client.user.id, guildId),
-            { body: commands }
-        );
-
-        console.log(`✅ Registered ${commands.length} guild-specific commands in ${guildId}`);
     } catch (err) {
-        console.error('Command registration failed:', err);
+        console.error('Command registration / cleanup failed:', err);
     }
 
     console.log(`✅ ${client.user.tag} online`);
