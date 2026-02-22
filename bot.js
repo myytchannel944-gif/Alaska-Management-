@@ -242,6 +242,7 @@ client.on('interactionCreate', async (interaction) => {
                     { label: 'Staff Applications', value: 'staff_apps', description: 'Join the ASRP team', emoji: '📝' },
                     { label: 'In-Game Rules', value: 'ig_rules', description: 'ER:LC Penal Code', emoji: '🎮' },
                     { label: 'Discord Rules', value: 'dc_rules', description: 'Community Guidelines', emoji: '📜' },
+                    { label: 'Vehicle Livery Dashboard', value: 'vehicle_livery', description: 'View current ASRP fleet status', emoji: '🚓' },
                 ]);
             const menuRow = new ActionRowBuilder().addComponents(menu);
             await interaction.channel.send({ embeds: [embed], components: [menuRow] });
@@ -337,41 +338,6 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
         }
-
-        // Vehicle Dashboard Command - added here
-        if (interaction.isChatInputCommand() && interaction.commandName === 'vehicle-dashboard') {
-            const vehicles = [
-                { name: "BKM Munich", year: 2020, type: "🚓", livery: "FBI Police", status: "ACTIVE" },
-                { name: "Bullhorn Prancer Pursuit", year: 2011, type: "🚓", livery: "State Trooper", status: "ACTIVE" },
-                { name: "Falcon Interceptor Sedan", year: 2017, type: "🚓", livery: "FBI, Secret Service", status: "ACTIVE" },
-                { name: "Stuttgart Prisoner Transport", year: 2020, type: "🚔", livery: "FBI", status: "ACTIVE" },
-                { name: "SWAT Armored Truck", year: 2011, type: "🛡️", livery: "FBI, HSI, SWAT Team", status: "ACTIVE" },
-            ];
-
-            const chunk = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
-
-            const embed = new EmbedBuilder()
-                .setTitle("ASRP | Vehicle Livery Dashboard")
-                .setDescription("All vehicles are currently **active** and deployed.")
-                .setColor(0x1E90FF)
-                .addFields(
-                    chunk(vehicles, 3).map(row => ({
-                        name: "\u200b",
-                        value: row.map(v =>
-                            `**${v.type} ${v.name} (${v.year})**\n` +
-                            `Livery: ${v.livery}\n` +
-                            `Status: 🟢 ${v.status}`
-                        ).join("\n\n─────────────────\n") || "No vehicles in this group",
-                        inline: false
-                    }))
-                )
-                .setFooter({ text: "Last Updated: February 22, 2026" })
-                .setTimestamp();
-
-            await interaction.channel.send({ embeds: [embed] });
-            return interaction.reply({ content: "✅ Vehicle Livery Dashboard deployed.", flags: MessageFlags.Ephemeral });
-        }
-
         // 5. OWNER PANEL
         if (interaction.isChatInputCommand() && interaction.commandName === 'ownerpanel') {
             const code = interaction.options.getString('code', true);
@@ -573,16 +539,54 @@ client.on('interactionCreate', async (interaction) => {
                           "9. **English in Public Channels**\n • Main language is English — other languages allowed in appropriate or private channels.\n\n" +
                           "10. **Staff Instructions**\n • Follow directions from staff members.\n • Arguing with staff punishments may lead to further action.\n\n" +
                           "Use #appeals or open a ticket if you believe a punishment was unfair."
+                },
+                vehicle_livery: {
+                    title: "ASRP | Vehicle Livery Dashboard",
+                    desc: "All vehicles are currently **active** and deployed."
                 }
             };
             const res = responses[interaction.values[0]];
             if (!res) return interaction.reply({ content: "Invalid option.", flags: MessageFlags.Ephemeral });
-            const embed = new EmbedBuilder()
-                .setTitle(res.title)
-                .setDescription(res.desc)
-                .setColor(BOT_COLOR)
-                .setThumbnail(DASHBOARD_ICON)
-                .setFooter({ text: "Alaska State RolePlay • Follow the rules!" });
+
+            const embed = new EmbedBuilder();
+
+            if (interaction.values[0] === 'vehicle_livery') {
+                const vehicles = [
+                    { name: "BKM Munich", year: 2020, type: "🚓", livery: "FBI Police", status: "ACTIVE" },
+                    { name: "Bullhorn Prancer Pursuit", year: 2011, type: "🚓", livery: "State Trooper", status: "ACTIVE" },
+                    { name: "Falcon Interceptor Sedan", year: 2017, type: "🚓", livery: "FBI, Secret Service", status: "ACTIVE" },
+                    { name: "Stuttgart Prisoner Transport", year: 2020, type: "🚔", livery: "FBI", status: "ACTIVE" },
+                    { name: "SWAT Armored Truck", year: 2011, type: "🛡️", livery: "FBI, HSI, SWAT Team", status: "ACTIVE" },
+                ];
+
+                const chunk = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
+
+                embed
+                    .setTitle("ASRP | Vehicle Livery Dashboard")
+                    .setDescription("All vehicles are currently **active** and deployed.")
+                    .setColor(0x1E90FF)
+                    .addFields(
+                        chunk(vehicles, 3).map(row => ({
+                            name: "\u200b",
+                            value: row.map(v =>
+                                `**${v.type} ${v.name} (${v.year})**\n` +
+                                `Livery: ${v.livery}\n` +
+                                `Status: 🟢 ${v.status}`
+                            ).join("\n\n─────────────────\n") || "No vehicles in this group",
+                            inline: false
+                        }))
+                    )
+                    .setFooter({ text: "Last Updated: February 22, 2026" })
+                    .setTimestamp();
+            } else {
+                embed
+                    .setTitle(res.title)
+                    .setDescription(res.desc)
+                    .setColor(BOT_COLOR)
+                    .setThumbnail(DASHBOARD_ICON)
+                    .setFooter({ text: "Alaska State RolePlay • Follow the rules!" });
+            }
+
             return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }
         // 12. TICKET CREATION
@@ -803,7 +807,6 @@ client.once('clientReady', async () => {
         new SlashCommandBuilder().setName('dashboard').setDescription('Deploy main dashboard panel'),
         new SlashCommandBuilder().setName('deptdashboard').setDescription('Deploy departments dashboard (Foundership only)'),
         new SlashCommandBuilder().setName('ticketstats').setDescription('View ticket stats (admin)'),
-        new SlashCommandBuilder().setName('vehicle-dashboard').setDescription('Deploy the ASRP Vehicle Livery Dashboard'),
         new SlashCommandBuilder()
             .setName('ownerpanel')
             .setDescription('Edit bot messages (owner)')
@@ -856,6 +859,38 @@ client.once('clientReady', async () => {
     } catch (err) {
         console.error('Command registration failed:', err);
     }
+
+    // ────────────────────────────────────────────────────────────────
+    // Rotating "Listening to" status - TimmySudo songs (real titles)
+    const timmySudoSongs = [
+        { name: 'Round My Mind', url: 'https://open.spotify.com/track/1oOtKipU9hFob4EYT9abJS?si=f94e71fcb7d64ae3' },
+        { name: 'Whoopty Doo', url: 'https://open.spotify.com/track/6uAjB0TDQNABx5Ci5npl3n?si=92e53bfaf6194aa7' },
+        { name: 'Idgaf (Rockin\' Margiela)', url: 'https://open.spotify.com/track/3t4yl97nY0aS9ZmpsIZhF1?si=cc21b30cfd944e9e' },
+        { name: 'On My Dick', url: 'https://open.spotify.com/track/7EospzJbwwLbW7Vv9pzdTw?si=401f2de7fc4f46e8' },
+        { name: 'You my enemy', url: 'https://open.spotify.com/track/3kAgDMJuBTDajIpbXME3uh?si=7cb66b3670c04fbd' }
+    ];
+
+    let currentIndex = 0;
+
+    function updateTimmyStatus() {
+        const song = timmySudoSongs[currentIndex];
+        client.user.setActivity({
+            name: song.name,
+            type: 2,  // Listening
+            url: song.url
+        });
+        console.log(`Status updated: Listening to ${song.name}`);
+
+        currentIndex = (currentIndex + 1) % timmySudoSongs.length;
+    }
+
+    // Start immediately
+    updateTimmyStatus();
+
+    // Rotate every 10 minutes (600000 ms)
+    setInterval(updateTimmyStatus, 10 * 60 * 1000);
+    // ────────────────────────────────────────────────────────────────
+
     console.log(`✅ ${client.user.tag} online`);
 });
 if (!TOKEN) throw new Error('Missing TOKEN');
