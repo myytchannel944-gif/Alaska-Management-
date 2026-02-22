@@ -73,7 +73,7 @@ const TICKET_ROLE_ID = "1474234032677060795";
 const TICKET_COOLDOWN_MS = 2 * 60 * 1000;
 const TOKEN = process.env.TOKEN;
 const PORT = Number(process.env.PORT) || 3000;
-const GUILD_ID = '1472277307002589216'; // Your guild ID
+const GUILD_ID = '1472277307002589216';
 
 const ticketData = new Map();
 const userLastTicketOpen = new Map();
@@ -114,6 +114,13 @@ function findExistingTicket(guild, openerId) {
         return channelId;
     }
     return null;
+}
+
+function formatSetupValue(value, type = 'id') {
+    if (!value) return 'Not set';
+    if (type === 'channel') return `<#${value}>`;
+    if (type === 'role') return `<@&${value}>`;
+    return value;
 }
 
 async function loadTicketState() {
@@ -494,7 +501,7 @@ client.on('interactionCreate', async (interaction) => {
                           "We are currently accepting applications for:\n" +
                           "• Staff Team (Moderators, Helpers, Administrators)\n\n" +
                           "All applications are reviewed by management. Make sure you meet the requirements listed in #「🌸」·applications before applying.\n\n" +
-                          "🔗 **Apply here:** https://your-application-link.com\n\n" +
+                          "🔗 **Apply here:** https://melonly.xyz/forms/7429303261795979264\n\n" +
                           "We look forward to potentially welcoming you to the team!"
                 },
                 ig_rules: {
@@ -527,13 +534,20 @@ client.on('interactionCreate', async (interaction) => {
                           "Use #appeals or open a ticket if you believe a punishment was unfair."
                 },
                 vehicle_livery: {
-                    title: "ASRP | Vehicle Livery Dashboard",
-                    desc: "All vehicles are currently **active** and deployed."
+                    title: "ASRP | Vehicle Livery Status",
+                    desc: "**Current Active Liveries – 2025 Deployment Overview**\n\n" +
+                          "• **BKM Munich 2020**\n  Assigned to: Ownership, FBI Police\n\n" +
+                          "• **Bullhorn Prancer Pursuit 2011**\n  Assigned to: State Trooper\n\n" +
+                          "• **Falcon Interceptor Sedan 2017**\n  Assigned to: FBI, Secret Service\n\n" +
+                          "• **Stuttgart Runner Prisoner Transport 2020**\n  Assigned to: FBI\n\n" +
+                          "• **SWAT Armored Truck 2011**\n  Assigned to: FBI, HSI (Department of Homeland Security), SWAT Team\n\n" +
+                          "**Status:** All listed vehicles are **currently active and deployed**.\n" +
+                          "Liveries may be updated or expanded as departments grow."
                 }
             };
 
             const res = responses[interaction.values[0]];
-            if (!res) return interaction.reply({ content: "Invalid option.", ephemeral: true });
+            if (!res) return interaction.reply({ content: "Invalid option selected.", ephemeral: true });
 
             const embed = new EmbedBuilder()
                 .setTitle(res.title)
