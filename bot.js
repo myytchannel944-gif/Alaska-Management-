@@ -294,14 +294,17 @@ client.on('interactionCreate', async (interaction) => {
             const dashboardEmbed = new EmbedBuilder()
                 .setTitle('🏔️ Alaska State Roleplay')
                 .setDescription(
-                    '━━━━━━━━━━━━━━━━━━\n**Departments Dashboard**\n━━━━━━━━━━━━━━━━━━\n\nSelect a department from the dropdown to get your invite and instructions.\n\n🚨 Professionalism is required\n📋 Follow all server rules\n⚠️ Abuse of roles will result in removal'
+                    '━━━━━━━━━━━━━━━━━━\n**Departments Dashboard**\n━━━━━━━━━━━━━━━━━━\n\n' +
+                    'Select a department from the dropdown to get your invite and instructions.\n\n' +
+                    '🚨 Professionalism is required\n📋 Follow all server rules\n⚠️ Abuse of roles will result in removal'
                 )
                 .setColor(5793266)
                 .addFields(
                     { name: '🚓 Alaska State Troopers', value: '🟢 **OPEN**\nStatewide law enforcement. Handles highways, rural patrol, and major incidents.', inline: false },
                     { name: '🚧 Alaska Department of Transportation', value: '🟢 **OPEN**\nHandles traffic control, road work, and scene support.', inline: false },
                     { name: '🚔 Alaska Police Department', value: '🔴 **CLOSED**\nCurrently in development.', inline: false },
-                    { name: '🚒 Alaska Fire Department', value: '🔴 **CLOSED**\nCurrently in development.', inline: false }
+                    { name: '🚒 Alaska Fire Department', value: '🔴 **CLOSED**\nCurrently in development.', inline: false },
+                    { name: '🕵️‍♂️ FBI', value: '🟢 **OPEN**\nFederal investigations, special operations, high-priority cases.', inline: false }
                 )
                 .setFooter({ text: 'Alaska State Roleplay • Departments System' })
                 .setTimestamp();
@@ -313,7 +316,8 @@ client.on('interactionCreate', async (interaction) => {
                     { label: 'Alaska State Troopers', value: 'ast', description: 'Join AST server', emoji: '🚓' },
                     { label: 'Alaska Department of Transportation', value: 'dot', description: 'Join DOT server', emoji: '🚧' },
                     { label: 'Alaska Police Department', value: 'apd', description: 'Currently in development', emoji: '🚔', disabled: true },
-                    { label: 'Alaska Fire Department', value: 'afd', description: 'Currently in development', emoji: '🚒', disabled: true }
+                    { label: 'Alaska Fire Department', value: 'afd', description: 'Currently in development', emoji: '🚒', disabled: true },
+                    { label: 'FBI', value: 'fbi', description: 'Join FBI server', emoji: '🕵️‍♂️' }
                 );
 
             const dashboardRow = new ActionRowBuilder().addComponents(departmentDropdown);
@@ -341,6 +345,9 @@ client.on('interactionCreate', async (interaction) => {
                     break;
                 case 'afd':
                     replyText = '🔴 **Alaska Fire Department** is currently **CLOSED** / in development.';
+                    break;
+                case 'fbi':
+                    replyText = '✅ **FBI** is **OPEN**!\nJoin here: https://discord.gg/fQC227yJZT';
                     break;
             }
 
